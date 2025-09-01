@@ -185,4 +185,103 @@
         0 0 40px hsl(var(--primary) / 0.4);
     }
   }
+
+  /* Mobile-first responsive optimizations */
+  @media (max-width: 768px) {
+    .container {
+      padding: 0.75rem !important;
+      margin: 0 !important;
+    }
+    
+    .trading-grid {
+      padding: 0.5rem;
+    }
+    
+    .glass-card {
+      padding: 1rem !important;
+      margin-bottom: 1rem;
+    }
+    
+    .grid {
+      gap: 0.75rem !important;
+    }
+    
+    /* Mobile typography */
+    .text-3xl {
+      font-size: 1.75rem !important;
+    }
+    
+    .text-2xl {
+      font-size: 1.375rem !important;
+    }
+    
+    .text-lg {
+      font-size: 1rem !important;
+    }
+    
+    /* Mobile button groups */
+    .flex.gap-2, .flex.gap-4 {
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    
+    /* Force single column on mobile */
+    .grid-cols-1.md\\:grid-cols-2.xl\\:grid-cols-3,
+    .grid-cols-1.md\\:grid-cols-2.lg\\:grid-cols-3,
+    .grid-cols-1.lg\\:grid-cols-2,
+    .grid-cols-2,
+    .grid-cols-3,
+    .grid-cols-4 {
+      grid-template-columns: 1fr !important;
+    }
+    
+    /* Mobile tabs */
+    .grid-cols-4, .grid-cols-5 {
+      grid-template-columns: repeat(2, 1fr) !important;
+      gap: 0.25rem;
+    }
+    
+    /* Mobile card content */
+    .w-10.h-10 {
+      width: 2rem !important;
+      height: 2rem !important;
+    }
+    
+    .w-12.h-12 {
+      width: 2.5rem !important;
+      height: 2.5rem !important;
+    }
+    
+    /* Mobile sidebar */
+    .w-80 {
+      width: 100% !important;
+    }
+    
+    /* Mobile balance cards */
+    .balance-card {
+      padding: 0.75rem !important;
+    }
+    
+    /* Mobile opportunity cards spacing */
+    .space-y-4 > * + * {
+      margin-top: 0.75rem !important;
+    }
+    
+    .space-y-6 > * + * {
+      margin-top: 1rem !important;
+    }
+  }
+  
+  /* Touch-friendly buttons on mobile */
+  @media (max-width: 768px) and (pointer: coarse) {
+    button, .btn {
+      min-height: 44px;
+      padding: 0.75rem 1rem;
+    }
+    
+    .size-sm {
+      min-height: 36px;
+      padding: 0.5rem 0.75rem;
+    }
+  }
 }

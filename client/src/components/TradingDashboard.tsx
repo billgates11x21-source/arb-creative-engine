@@ -4,6 +4,7 @@ import { MarketOverview } from "@/components/MarketOverview";
 import { ArbitrageCard } from "@/components/ArbitrageCard";
 import { AIStrategyPanel } from "@/components/AIStrategyPanel";
 import { RiskManagementPanel } from "@/components/RiskManagementPanel";
+import { OKXBalancePanel } from "@/components/OKXBalancePanel";
 import { useArbitrageEngine } from "@/hooks/useArbitrageEngine";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -18,7 +19,8 @@ import {
   Shield,
   RefreshCw,
   Play,
-  Pause
+  Pause,
+  Wallet
 } from "lucide-react";
 
 export function TradingDashboard() {
@@ -135,10 +137,14 @@ export function TradingDashboard() {
 
         {/* Main Trading Interface */}
         <Tabs defaultValue="opportunities" className="w-full">
-          <TabsList className="grid w-full grid-cols-4 glass-card">
+          <TabsList className="grid w-full grid-cols-5 glass-card">
             <TabsTrigger value="opportunities" className="flex items-center gap-2">
               <TrendingUp className="w-4 h-4" />
               Opportunities
+            </TabsTrigger>
+            <TabsTrigger value="okx-balance" className="flex items-center gap-2">
+              <Wallet className="w-4 h-4" />
+              OKX Balance
             </TabsTrigger>
             <TabsTrigger value="ai-strategy" className="flex items-center gap-2">
               <Brain className="w-4 h-4" />
@@ -153,6 +159,10 @@ export function TradingDashboard() {
               Analytics
             </TabsTrigger>
           </TabsList>
+
+          <TabsContent value="okx-balance" className="mt-6">
+            <OKXBalancePanel />
+          </TabsContent>
 
           <TabsContent value="opportunities" className="mt-6">
             <div className="mb-6">
