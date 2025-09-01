@@ -122,45 +122,89 @@ async function scanArbitrageOpportunities(req: any, res: any) {
 
   // Store opportunities in database and collect the stored records
   const storedOpportunities = [];
+  let autoExecutedTrades = [];
+  
   for (const opportunity of opportunities) {
-    const stored = await db.insert(tradingOpportunities)
-      .values({
-        tokenPair: opportunity.token_pair,
-        buyExchange: opportunity.buy_exchange,
-        sellExchange: opportunity.sell_exchange,
-        buyPrice: opportunity.buy_price.toString(),
-        sellPrice: opportunity.sell_price.toString(),
-        profitAmount: opportunity.profit_amount.toString(),
-        profitPercentage: opportunity.profit_percentage.toString(),
-        volumeAvailable: opportunity.volume_available.toString(),
-        gasCost: opportunity.gas_cost?.toString(),
-        executionTime: opportunity.execution_time?.toString(),
-        riskScore: opportunity.risk_score,
-        status: opportunity.status,
-        expiresAt: new Date(Date.now() + 30 * 60 * 1000), // 30 minutes from now
-      })
-      .returning();
-    
-    if (stored.length > 0) {
-      // Convert database record back to the expected format
-      const dbRecord = stored[0];
-      storedOpportunities.push({
-        id: dbRecord.id.toString(), // Use database ID
-        token_pair: dbRecord.tokenPair,
-        buy_exchange: dbRecord.buyExchange,
-        sell_exchange: dbRecord.sellExchange,
-        buy_price: parseFloat(dbRecord.buyPrice),
-        sell_price: parseFloat(dbRecord.sellPrice),
-        profit_amount: parseFloat(dbRecord.profitAmount),
-        profit_percentage: parseFloat(dbRecord.profitPercentage),
-        volume_available: parseFloat(dbRecord.volumeAvailable),
-        gas_cost: dbRecord.gasCost ? parseFloat(dbRecord.gasCost) : null,
-        execution_time: dbRecord.executionTime ? parseFloat(dbRecord.executionTime) : null,
-        risk_score: dbRecord.riskScore,
-        status: dbRecord.status,
-        created_at: dbRecord.createdAt?.toISOString(),
-        expires_at: dbRecord.expiresAt?.toISOString()
-      });
+    try {
+      const stored = await db.insert(tradingOpportunities)
+        .values({
+          tokenPair: opportunity.token_pair,
+          buyExchange: opportunity.buy_exchange,
+          sellExchange: opportunity.sell_exchange,
+          buyPrice: opportunity.buy_price.toString(),
+          sellPrice: opportunity.sell_price.toString(),
+          profitAmount: opportunity.profit_amount.toString(),
+          profitPercentage: opportunity.profit_percentage.toString(),
+          volumeAvailable: opportunity.volume_available.toString(),
+          gasCost: opportunity.gas_cost?.toString(),
+          executionTime: opportunity.execution_time?.toString(),
+          riskScore: opportunity.risk_score,
+          status: opportunity.status,
+          expiresAt: new Date(Date.now() + 30 * 60 * 1000), // 30 minutes from now
+        })
+        .returning();
+      
+      if (stored.length > 0) {
+        // Convert database record back to the expected format
+        const dbRecord = stored[0];
+        const formattedOpp = {
+          id: dbRecord.id.toString(),
+          token_pair: dbRecord.tokenPair,
+          buy_exchange: dbRecord.buyExchange,
+          sell_exchange: dbRecord.sellExchange,
+          buy_price: parseFloat(dbRecord.buyPrice),
+          sell_price: parseFloat(dbRecord.sellPrice),
+          profit_amount: parseFloat(dbRecord.profitAmount),
+          profit_percentage: parseFloat(dbRecord.profitPercentage),
+          volume_available: parseFloat(dbRecord.volumeAvailable),
+          gas_cost: dbRecord.gasCost ? parseFloat(dbRecord.gasCost) : null,
+          execution_time: dbRecord.executionTime ? parseFloat(dbRecord.executionTime) : null,
+          risk_score: dbRecord.riskScore,
+          status: dbRecord.status,
+          created_at: dbRecord.createdAt?.toISOString(),
+          expires_at: dbRecord.expiresAt?.toISOString()
+        };
+        
+        storedOpportunities.push(formattedOpp);
+        
+        // Auto-execute high-profit opportunities (>1.5% and low risk)
+        if (formattedOpp.profit_percentage > 1.5 && formattedOpp.risk_score <= 2 && !riskSettingsData[0].isSimulationMode) {
+          try {
+            console.log(`Auto-executing opportunity ${formattedOpp.id} with ${formattedOpp.profit_percentage}% profit`);
+            
+            // Execute trade automatically with small amount
+            const tradeAmount = Math.min(formattedOpp.volume_available * 0.1, 0.5);
+            const strategyId = formattedOpp.id.startsWith('momentum-') ? 'trending_momentum' : 
+                            formattedOpp.id.startsWith('yield-') ? 'yield_farming' : 'flash_loan';
+            
+            const executionResult = await okxService.executeRealTrade(dbRecord, tradeAmount);
+            
+            // Record the auto-executed trade
+            const trade = await db.insert(executedTrades).values({
+              opportunityId: dbRecord.id,
+              strategyId: null,
+              transactionHash: executionResult.txHash,
+              tokenPair: dbRecord.tokenPair,
+              buyExchange: dbRecord.buyExchange,
+              sellExchange: dbRecord.sellExchange,
+              amountTraded: tradeAmount.toString(),
+              profitRealized: executionResult.actualProfit.toString(),
+              gasUsed: executionResult.gasUsed || 0,
+              gasPrice: executionResult.gasPrice.toString(),
+              executionTime: executionResult.executionTime.toString(),
+              status: executionResult.success ? 'confirmed' : 'failed'
+            }).returning();
+            
+            autoExecutedTrades.push(trade[0]);
+            console.log(`Auto-executed trade ${trade[0].id} with profit: ${executionResult.actualProfit}`);
+            
+          } catch (autoExecError) {
+            console.error(`Auto-execution failed for opportunity ${formattedOpp.id}:`, autoExecError);
+          }
+        }
+      }
+    } catch (dbError) {
+      console.error('Database error storing opportunity:', dbError);
     }
   }
 
@@ -171,6 +215,8 @@ async function scanArbitrageOpportunities(req: any, res: any) {
     opportunities: storedOpportunities,
     totalFound: storedOpportunities.length,
     highProfitCount: storedOpportunities.filter(o => o.profit_percentage > 2).length,
+    autoExecutedCount: autoExecutedTrades.length,
+    autoExecutedTrades,
     strategy: strategyUsed,
     aiRecommendation,
     scanTimestamp: new Date().toISOString()

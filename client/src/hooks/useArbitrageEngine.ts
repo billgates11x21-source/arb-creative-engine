@@ -103,7 +103,7 @@ export function useArbitrageEngine() {
       setCurrentStrategy(data.strategy || 'arbitrage');
       setLastUpdate(new Date());
 
-      // Update stats
+      // Update stats including auto-executed trades
       setTradingStats(prev => ({
         ...prev,
         totalOpportunities: data.opportunities?.length || 0,
@@ -117,6 +117,14 @@ export function useArbitrageEngine() {
         trending_momentum: 'Trending Momentum',
         mock_arbitrage: 'Mock Arbitrage'
       };
+
+      // Show auto-execution results if any
+      if (data.autoExecutedCount > 0) {
+        toast({
+          title: "Auto-Execution Complete",
+          description: `Automatically executed ${data.autoExecutedCount} high-profit trades`,
+        });
+      }
 
       toast({
         title: "Opportunities Updated",
@@ -294,14 +302,14 @@ export function useArbitrageEngine() {
   };
 
 
-  // Auto-refresh when engine is active
+  // Auto-refresh when engine is active with faster scanning for auto-execution
   useEffect(() => {
     if (!isEngineActive) return;
 
     const interval = setInterval(() => {
       scanOpportunities();
       getPortfolioStatus();
-    }, 30000); // Refresh every 30 seconds
+    }, 10000); // Refresh every 10 seconds for faster auto-execution
 
     return () => clearInterval(interval);
   }, [isEngineActive, scanOpportunities, getPortfolioStatus]);
