@@ -160,8 +160,8 @@ export function useArbitrageEngine() {
       );
 
       toast({
-        title: data.simulation ? "Trade Simulated" : "Trade Executed",
-        description: `${data.simulation ? 'Simulated' : 'Executed'} trade for ${amount} tokens`,
+        title: "Trade Executed",
+        description: `Executed real trade for ${amount} tokens`,
         variant: data.success ? "default" : "destructive",
       });
 

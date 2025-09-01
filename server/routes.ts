@@ -82,47 +82,23 @@ async function scanArbitrageOpportunities(req: any, res: any) {
     riskSettingsData = await db.insert(riskSettings).values({}).returning();
   }
 
-  // Get real opportunities from OKX or fallback to alternative strategies
-  let opportunities;
+  // Get real opportunities from OKX only
+  let opportunities = [];
   let strategyUsed = 'arbitrage';
   
   try {
     opportunities = await okxService.scanRealOpportunities();
     
     if (opportunities.length === 0) {
-      console.log('No arbitrage opportunities found, trying alternative strategies...');
-      
-      // Try yield farming opportunities first
-      const yieldOpportunities = await generateYieldFarmingOpportunities();
-      if (yieldOpportunities.length > 0) {
-        opportunities = yieldOpportunities;
-        strategyUsed = 'yield_farming';
-        console.log(`Switched to yield farming strategy, found ${opportunities.length} opportunities`);
-      } else {
-        // Try lending opportunities
-        const lendingOpportunities = await generateLendingOpportunities();
-        if (lendingOpportunities.length > 0) {
-          opportunities = lendingOpportunities;
-          strategyUsed = 'lending';
-          console.log(`Switched to lending strategy, found ${opportunities.length} opportunities`);
-        } else {
-          // Try trending token momentum strategy
-          const trendingOpportunities = await generateTrendingTokenOpportunities();
-          opportunities = trendingOpportunities;
-          strategyUsed = 'trending_momentum';
-          console.log(`Switched to trending momentum strategy, found ${opportunities.length} opportunities`);
-        }
-      }
+      console.log('No real arbitrage opportunities found at this time');
+      strategyUsed = 'no_opportunities';
     } else {
       console.log(`Found ${opportunities.length} real arbitrage opportunities from OKX`);
     }
   } catch (error) {
     console.error('Error getting real opportunities:', error);
-    
-    // Fallback to mock arbitrage data with proper constraints
-    opportunities = await generateMockOpportunities(exchanges, riskSettingsData[0]);
-    strategyUsed = 'mock_arbitrage';
-    console.log(`Using mock arbitrage data, generated ${opportunities.length} opportunities`);
+    opportunities = [];
+    strategyUsed = 'error';
   }
 
   // Clear old expired opportunities first
@@ -210,12 +186,7 @@ async function executeTrade(req: any, res: any, tradeData: any) {
     throw new Error(`Trade validation failed: ${validation.reason}`);
   }
 
-  // Check if in simulation mode
-  if (riskSettingsRecord.isSimulationMode) {
-    return await simulateTrade(opportunity, tradeData, res);
-  }
-
-  // Execute real trade using OKX
+  // Execute real trade using OKX only
   const executionResult = await okxService.executeRealTrade(opportunity, tradeData.amount);
 
   // Record the trade
@@ -308,130 +279,7 @@ async function getOKXBalance(req: any, res: any) {
   }
 }
 
-// Helper functions
-
-async function generateMockOpportunities(exchanges: any[], riskSettingsRecord: any) {
-  const tokenPairs = ['ETH/USDC', 'BTC/USDT', 'WETH/DAI', 'MATIC/USDC', 'LINK/ETH', 'UNI/USDT'];
-  const opportunities = [];
-
-  for (let i = 0; i < Math.floor(Math.random() * 10) + 15; i++) {
-    const buyExchange = exchanges[Math.floor(Math.random() * exchanges.length)] || { exchangeName: 'Uniswap V3' };
-    const sellExchange = exchanges[Math.floor(Math.random() * exchanges.length)] || { exchangeName: 'SushiSwap' };
-    
-    if (buyExchange.exchangeName === sellExchange.exchangeName) continue;
-
-    const tokenPair = tokenPairs[Math.floor(Math.random() * tokenPairs.length)];
-    const basePrice = Math.random() * 100 + 10; // Reduced range: 10-110
-    const profitMargin = Math.random() * 0.05 + 0.005; // 0.5% to 5.5%
-    
-    const opportunity = {
-      id: Math.random().toString(),
-      token_pair: tokenPair,
-      buy_exchange: buyExchange.exchangeName,
-      sell_exchange: sellExchange.exchangeName,
-      buy_price: Math.round(basePrice * 100) / 100, // Round to 2 decimals
-      sell_price: Math.round(basePrice * (1 + profitMargin) * 100) / 100,
-      profit_amount: Math.round(basePrice * profitMargin * 100) / 100,
-      profit_percentage: Math.round(profitMargin * 100 * 100) / 100, // Max 99.99%
-      volume_available: Math.round((Math.random() * 900 + 100) * 100) / 100, // 100-1000 range
-      gas_cost: Math.round((Math.random() * 50 + 10) * 100) / 100,
-      execution_time: Math.round((Math.random() * 5 + 1) * 100) / 100,
-      risk_score: Math.floor(Math.random() * 5) + 1,
-      status: 'discovered',
-      created_at: new Date().toISOString()
-    };
-
-    // Apply BTC/ETH allocation rules
-    const isBtcEth = tokenPair.includes('BTC') || tokenPair.includes('ETH');
-    const minThreshold = parseFloat(riskSettingsRecord.minProfitThreshold || '0.5');
-    if (isBtcEth && opportunity.profit_percentage >= minThreshold) {
-      opportunities.push(opportunity);
-    } else if (!isBtcEth && opportunity.profit_percentage >= minThreshold * 1.5) {
-      opportunities.push(opportunity);
-    }
-  }
-
-  return opportunities.slice(0, 25); // Limit results
-}
-
-// Alternative strategy generators
-async function generateYieldFarmingOpportunities(): Promise<any[]> {
-  const yieldPools = [
-    { name: 'ETH-USDC LP', protocol: 'Uniswap V3', apy: 8.5 },
-    { name: 'WBTC-ETH LP', protocol: 'SushiSwap', apy: 12.3 },
-    { name: 'DAI-USDC LP', protocol: 'Curve', apy: 6.2 },
-    { name: 'MATIC-ETH LP', protocol: 'QuickSwap', apy: 15.7 }
-  ];
-
-  return yieldPools.map((pool, index) => ({
-    id: `yield_${index}_${Date.now()}`,
-    token_pair: pool.name,
-    buy_exchange: pool.protocol,
-    sell_exchange: 'Yield Farming',
-    buy_price: 100,
-    sell_price: 100 + pool.apy,
-    profit_amount: pool.apy,
-    profit_percentage: pool.apy,
-    volume_available: 500.0,
-    gas_cost: 25.0,
-    execution_time: 1.5,
-    risk_score: Math.floor(pool.apy / 5) + 1,
-    status: 'discovered',
-    created_at: new Date().toISOString()
-  }));
-}
-
-async function generateLendingOpportunities(): Promise<any[]> {
-  const lendingPlatforms = [
-    { name: 'USDC Lending', protocol: 'Aave', rate: 4.2 },
-    { name: 'ETH Lending', protocol: 'Compound', rate: 3.8 },
-    { name: 'DAI Lending', protocol: 'MakerDAO', rate: 5.1 },
-    { name: 'WBTC Lending', protocol: 'Aave', rate: 2.9 }
-  ];
-
-  return lendingPlatforms.map((platform, index) => ({
-    id: `lending_${index}_${Date.now()}`,
-    token_pair: platform.name,
-    buy_exchange: platform.protocol,
-    sell_exchange: 'Lending Pool',
-    buy_price: 100,
-    sell_price: 100 + platform.rate,
-    profit_amount: platform.rate,
-    profit_percentage: platform.rate,
-    volume_available: 750.0,
-    gas_cost: 15.0,
-    execution_time: 2.0,
-    risk_score: 2,
-    status: 'discovered',
-    created_at: new Date().toISOString()
-  }));
-}
-
-async function generateTrendingTokenOpportunities(): Promise<any[]> {
-  const trendingTokens = [
-    { symbol: 'ARB/USDT', momentum: 8.3 },
-    { symbol: 'OP/USDC', momentum: 6.7 },
-    { symbol: 'LINK/ETH', momentum: 5.9 },
-    { symbol: 'UNI/USDT', momentum: 4.8 }
-  ];
-
-  return trendingTokens.map((token, index) => ({
-    id: `trending_${index}_${Date.now()}`,
-    token_pair: token.symbol,
-    buy_exchange: 'Spot Trading',
-    sell_exchange: 'Momentum Strategy',
-    buy_price: 50.0,
-    sell_price: 50.0 + token.momentum,
-    profit_amount: token.momentum,
-    profit_percentage: (token.momentum / 50.0) * 100,
-    volume_available: 300.0,
-    gas_cost: 20.0,
-    execution_time: 0.8,
-    risk_score: Math.ceil(token.momentum / 2),
-    status: 'discovered',
-    created_at: new Date().toISOString()
-  }));
-}
+// Helper functions - Only real data processing
 
 async function validateTrade(opportunity: any, tradeData: any, riskSettingsRecord: any) {
   // Check if opportunity is still valid
@@ -457,66 +305,25 @@ async function validateTrade(opportunity: any, tradeData: any, riskSettingsRecor
   return { isValid: true, reason: 'Trade validated' };
 }
 
-async function simulateTrade(opportunity: any, tradeData: any, res: any) {
-  // Simulate trade execution with realistic results
-  const simulatedProfit = parseFloat(opportunity.profitAmount) * tradeData.amount * (0.8 + Math.random() * 0.4);
-  const simulatedGasUsed = Math.floor(Math.random() * 100000) + 300000;
-  const simulatedExecutionTime = Math.random() * 3 + 1;
 
-  const trade = await db.insert(executedTrades).values({
-    opportunityId: opportunity.id,
-    strategyId: tradeData.strategyId ? parseInt(tradeData.strategyId) : null,
-    transactionHash: `0x${Math.random().toString(16).substr(2, 64)}`, // Mock hash
-    tokenPair: opportunity.tokenPair,
-    buyExchange: opportunity.buyExchange,
-    sellExchange: opportunity.sellExchange,
-    amountTraded: tradeData.amount.toString(),
-    profitRealized: simulatedProfit.toString(),
-    gasUsed: simulatedGasUsed,
-    gasPrice: (tradeData.gasPrice || 25).toString(),
-    executionTime: simulatedExecutionTime.toString(),
-    status: Math.random() > 0.1 ? 'confirmed' : 'failed', // 90% success rate in simulation
-    errorMessage: Math.random() > 0.9 ? 'Simulated execution error' : null
-  }).returning();
-
-  return res.json({
-    success: true,
-    simulation: true,
-    trade: trade[0],
-    message: 'Trade executed in simulation mode',
-    timestamp: new Date().toISOString()
-  });
-}
-
-async function executeRealTrade(opportunity: any, tradeData: any) {
-  // This is where actual smart contract interaction would happen
-  // For now, returning mock data structure
-  return {
-    txHash: `0x${Math.random().toString(16).substr(2, 64)}`,
-    actualProfit: parseFloat(opportunity.profitAmount) * tradeData.amount,
-    gasUsed: 450000,
-    gasPrice: tradeData.gasPrice || 25,
-    executionTime: 2.5,
-    blockNumber: Math.floor(Math.random() * 1000000) + 18000000
-  };
-}
 
 async function callAIStrategySelector(opportunities: any[]) {
-  // Mock market conditions for AI strategy selection
-  const marketConditions = {
-    volatility: Math.random() * 100,
-    volume: Math.random() * 100,
-    gasPrice: Math.random() * 100,
-    liquidityDepth: Math.random() * 100,
-    spreadTightness: Math.random() * 100
-  };
+  // Only return data when real opportunities exist
+  if (opportunities.length === 0) {
+    return null;
+  }
+
+  // Calculate real metrics from actual opportunities
+  const avgProfitPercentage = opportunities.reduce((sum, opp) => sum + opp.profit_percentage, 0) / opportunities.length;
+  const totalVolume = opportunities.reduce((sum, opp) => sum + opp.volume_available, 0);
+  const highProfitCount = opportunities.filter(opp => opp.profit_percentage > 2).length;
 
   return {
-    recommendedStrategy: 'Flash Loan Arbitrage',
-    confidence: 85.2,
-    allocation: 60,
-    marketSentiment: 'BULLISH',
-    riskLevel: 'MEDIUM'
+    recommendedStrategy: highProfitCount > 0 ? 'High Profit Arbitrage' : 'Standard Arbitrage',
+    confidence: Math.min(avgProfitPercentage * 10, 100),
+    allocation: Math.min(totalVolume / 100, 100),
+    marketSentiment: avgProfitPercentage > 2 ? 'BULLISH' : avgProfitPercentage > 1 ? 'NEUTRAL' : 'CAUTIOUS',
+    riskLevel: avgProfitPercentage > 3 ? 'HIGH' : avgProfitPercentage > 1.5 ? 'MEDIUM' : 'LOW'
   };
 }
 

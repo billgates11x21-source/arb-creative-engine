@@ -239,28 +239,82 @@ class OKXService {
 
   async executeRealTrade(opportunity: any, amount: number): Promise<any> {
     try {
-      // This would implement actual trading logic
-      // For now, return a simulation of successful execution
-      console.log(`Executing trade for ${opportunity.token_pair} amount: ${amount}`);
+      console.log(`Executing real trade for ${opportunity.token_pair} amount: ${amount}`);
       
-      // In a real implementation, you would:
-      // 1. Place buy order on the cheaper exchange
-      // 2. Place sell order on the more expensive exchange
-      // 3. Monitor execution and handle partial fills
+      // Extract trading pair from opportunity
+      const [baseCurrency, quoteCurrency] = opportunity.token_pair.split('/');
+      
+      if (!baseCurrency || !quoteCurrency) {
+        throw new Error('Invalid trading pair format');
+      }
+      
+      const symbol = `${baseCurrency}/${quoteCurrency}`;
+      
+      // Check if market exists
+      if (!this.exchange.markets[symbol]) {
+        throw new Error(`Market ${symbol} not available on OKX`);
+      }
+      
+      // Place buy order on cheaper exchange (buy side)
+      const buyOrder = await this.exchange.createMarketBuyOrder(symbol, amount);
+      console.log('Buy order placed:', buyOrder.id);
+      
+      // Wait for buy order to fill
+      await this.waitForOrderFill(buyOrder.id, symbol);
+      
+      // Place sell order on more expensive exchange (sell side)
+      const sellOrder = await this.exchange.createMarketSellOrder(symbol, amount);
+      console.log('Sell order placed:', sellOrder.id);
+      
+      // Wait for sell order to fill
+      await this.waitForOrderFill(sellOrder.id, symbol);
+      
+      // Calculate actual profit
+      const buyPrice = buyOrder.average || buyOrder.price;
+      const sellPrice = sellOrder.average || sellOrder.price;
+      const actualProfit = (sellPrice - buyPrice) * amount;
       
       return {
         success: true,
-        txHash: `okx_${Date.now()}`,
-        actualProfit: opportunity.profit_amount * amount,
-        gasUsed: 0,
+        txHash: `${buyOrder.id}_${sellOrder.id}`,
+        actualProfit,
+        gasUsed: 0, // No gas on CEX
         gasPrice: 0,
-        executionTime: Math.random() * 2 + 0.5,
-        blockNumber: null
+        executionTime: (Date.now() - Date.parse(buyOrder.timestamp)) / 1000,
+        blockNumber: null,
+        buyOrderId: buyOrder.id,
+        sellOrderId: sellOrder.id
       };
     } catch (error) {
       console.error('Error executing real trade:', error);
-      throw error;
+      throw new Error(`Trade execution failed: ${error.message}`);
     }
+  }
+  
+  private async waitForOrderFill(orderId: string, symbol: string, maxWaitTime = 30000): Promise<void> {
+    const startTime = Date.now();
+    
+    while (Date.now() - startTime < maxWaitTime) {
+      try {
+        const order = await this.exchange.fetchOrder(orderId, symbol);
+        
+        if (order.status === 'closed' || order.status === 'filled') {
+          return;
+        }
+        
+        if (order.status === 'canceled' || order.status === 'rejected') {
+          throw new Error(`Order ${orderId} was ${order.status}`);
+        }
+        
+        // Wait 1 second before checking again
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      } catch (error) {
+        console.error(`Error checking order ${orderId}:`, error);
+        throw error;
+      }
+    }
+    
+    throw new Error(`Order ${orderId} did not fill within ${maxWaitTime}ms`);
   }
 
   getConnectionStatus() {
