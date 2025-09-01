@@ -18,10 +18,12 @@ interface ArbitrageOpportunity {
 
 interface ArbitrageCardProps {
   opportunity: ArbitrageOpportunity;
+  onExecute?: () => void;
+  isHighProfit?: boolean;
 }
 
-export function ArbitrageCard({ opportunity }: ArbitrageCardProps) {
-  const isHighProfit = opportunity.profitPercent > 2;
+export function ArbitrageCard({ opportunity, onExecute, isHighProfit = false }: ArbitrageCardProps) {
+  const isHighProfitOpportunity = isHighProfit || opportunity.profitPercent > 2;
   
   return (
     <Card className="glass-card p-6 hover:neon-border transition-all duration-300 group">
@@ -38,10 +40,10 @@ export function ArbitrageCard({ opportunity }: ArbitrageCardProps) {
           </div>
         </div>
         <Badge 
-          variant={isHighProfit ? "default" : "secondary"}
-          className={isHighProfit ? "profit-glow neon-text" : ""}
+          variant={isHighProfitOpportunity ? "default" : "secondary"}
+          className={isHighProfitOpportunity ? "profit-glow neon-text" : ""}
         >
-          {isHighProfit && <Zap className="w-3 h-3 mr-1" />}
+          {isHighProfitOpportunity && <Zap className="w-3 h-3 mr-1" />}
           +{opportunity.profitPercent.toFixed(2)}%
         </Badge>
       </div>
@@ -76,6 +78,7 @@ export function ArbitrageCard({ opportunity }: ArbitrageCardProps) {
       <Button 
         className="w-full neon-border bg-primary/10 text-primary hover:bg-primary/20 transition-all duration-300"
         variant="outline"
+        onClick={onExecute}
       >
         <TrendingUp className="w-4 h-4 mr-2" />
         Execute Trade
