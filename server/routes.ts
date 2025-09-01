@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { db } from "./db";
 import { seedDatabase } from "./seed";
+import { okxService } from "./okx-service";
 import { 
   tradingOpportunities, 
   executedTrades, 
@@ -21,6 +22,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Seed the database with initial data
   await seedDatabase();
   
+  // Initialize OKX service
+  await okxService.initialize();
+  
   // Trading Engine Routes
   app.post("/api/trading-engine", async (req, res) => {
     try {
@@ -35,6 +39,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         case 'get_portfolio_status':
           return await getPortfolioStatus(req, res);
+        
+        case 'get_okx_balance':
+          return await getOKXBalance(req, res);
         
         case 'update_risk_settings':
           return await updateRiskSettings(req, res, data);
@@ -75,12 +82,31 @@ async function scanArbitrageOpportunities(req: any, res: any) {
     riskSettingsData = await db.insert(riskSettings).values({}).returning();
   }
 
-  // Generate mock opportunities (in production, this would connect to actual APIs)
-  const opportunities = await generateMockOpportunities(exchanges, riskSettingsData[0]);
+  // Get real opportunities from OKX or fallback to mock data
+  let opportunities;
+  try {
+    opportunities = await okxService.scanRealOpportunities();
+    if (opportunities.length === 0) {
+      // Fallback to mock data if no real opportunities found
+      opportunities = await generateMockOpportunities(exchanges, riskSettingsData[0]);
+    }
+  } catch (error) {
+    console.error('Error getting real opportunities:', error);
+    opportunities = await generateMockOpportunities(exchanges, riskSettingsData[0]);
+  }
 
-  // Store opportunities in database
+  // Clear old expired opportunities first
+  await db.delete(tradingOpportunities).where(
+    and(
+      eq(tradingOpportunities.status, 'discovered'),
+      gte(new Date(), tradingOpportunities.expiresAt)
+    )
+  );
+
+  // Store opportunities in database and collect the stored records
+  const storedOpportunities = [];
   for (const opportunity of opportunities) {
-    await db.insert(tradingOpportunities)
+    const stored = await db.insert(tradingOpportunities)
       .values({
         tokenPair: opportunity.token_pair,
         buyExchange: opportunity.buy_exchange,
@@ -96,16 +122,38 @@ async function scanArbitrageOpportunities(req: any, res: any) {
         status: opportunity.status,
         expiresAt: new Date(Date.now() + 30 * 60 * 1000), // 30 minutes from now
       })
-      .onConflictDoNothing();
+      .returning();
+    
+    if (stored.length > 0) {
+      // Convert database record back to the expected format
+      const dbRecord = stored[0];
+      storedOpportunities.push({
+        id: dbRecord.id.toString(), // Use database ID
+        token_pair: dbRecord.tokenPair,
+        buy_exchange: dbRecord.buyExchange,
+        sell_exchange: dbRecord.sellExchange,
+        buy_price: parseFloat(dbRecord.buyPrice),
+        sell_price: parseFloat(dbRecord.sellPrice),
+        profit_amount: parseFloat(dbRecord.profitAmount),
+        profit_percentage: parseFloat(dbRecord.profitPercentage),
+        volume_available: parseFloat(dbRecord.volumeAvailable),
+        gas_cost: dbRecord.gasCost ? parseFloat(dbRecord.gasCost) : null,
+        execution_time: dbRecord.executionTime ? parseFloat(dbRecord.executionTime) : null,
+        risk_score: dbRecord.riskScore,
+        status: dbRecord.status,
+        created_at: dbRecord.createdAt?.toISOString(),
+        expires_at: dbRecord.expiresAt?.toISOString()
+      });
+    }
   }
 
   // Get AI strategy recommendation
-  const aiRecommendation = await callAIStrategySelector(opportunities);
+  const aiRecommendation = await callAIStrategySelector(storedOpportunities);
 
   return res.json({
-    opportunities,
-    totalFound: opportunities.length,
-    highProfitCount: opportunities.filter(o => o.profit_percentage > 2).length,
+    opportunities: storedOpportunities,
+    totalFound: storedOpportunities.length,
+    highProfitCount: storedOpportunities.filter(o => o.profit_percentage > 2).length,
     aiRecommendation,
     scanTimestamp: new Date().toISOString()
   });
@@ -136,8 +184,8 @@ async function executeTrade(req: any, res: any, tradeData: any) {
     return await simulateTrade(opportunity, tradeData, res);
   }
 
-  // For production trading, you would integrate with actual smart contracts here
-  const executionResult = await executeRealTrade(opportunity, tradeData);
+  // Execute real trade using OKX
+  const executionResult = await okxService.executeRealTrade(opportunity, tradeData.amount);
 
   // Record the trade
   const trade = await db.insert(executedTrades).values({
@@ -208,6 +256,25 @@ async function updateRiskSettings(req: any, res: any, settings: any) {
     settings: updated[0],
     timestamp: new Date().toISOString()
   });
+}
+
+async function getOKXBalance(req: any, res: any) {
+  try {
+    const balance = await okxService.getAccountBalance();
+    const connectionStatus = okxService.getConnectionStatus();
+    
+    return res.json({
+      balance,
+      connectionStatus,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error fetching OKX balance:', error);
+    return res.status(500).json({ 
+      error: error instanceof Error ? error.message : 'Failed to fetch balance',
+      connectionStatus: okxService.getConnectionStatus()
+    });
+  }
 }
 
 // Helper functions
