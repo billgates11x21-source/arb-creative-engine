@@ -1,122 +1,32 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useToast } from '@/hooks/use-toast';
 
-// Mock Supabase client for development
-const mockSupabase = {
+// API client for calling server endpoints
+const apiClient = {
   functions: {
     invoke: async (functionName: string, options: any) => {
-      // Mock implementation for development
-      console.log(`Mock Supabase function call: ${functionName}`, options);
+      console.log(`API call: ${functionName}`, options);
       
-      if (functionName === 'trading-engine') {
-        const { action } = options.body;
-        
-        switch (action) {
-          case 'scan_opportunities':
-            return {
-              data: {
-                opportunities: generateMockOpportunities(),
-                aiRecommendation: {
-                  recommendedStrategy: 'Flash Loan Arbitrage',
-                  confidence: 85.2,
-                  allocation: 60,
-                  marketSentiment: 'BULLISH',
-                  riskLevel: 'MEDIUM'
-                }
-              },
-              error: null
-            };
-            
-          case 'execute_trade':
-            return {
-              data: {
-                success: true,
-                simulation: true,
-                trade: {
-                  id: Math.random().toString(),
-                  profit: Math.random() * 100,
-                  status: 'confirmed'
-                }
-              },
-              error: null
-            };
-            
-          case 'get_portfolio_status':
-            return {
-              data: {
-                portfolio: {
-                  totalProfit: 8420,
-                  tradesCount: 24,
-                  successRate: 94.2,
-                  activeOpportunities: 15,
-                  avgProfitPercent: 2.8,
-                  totalVolume: 1250000
-                }
-              },
-              error: null
-            };
-            
-          default:
-            return { data: null, error: null };
-        }
+      const endpoint = `/api/${functionName}`;
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(options.body),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        return { data: null, error: { message: errorData.error || 'API call failed' } };
       }
-      
-      if (functionName === 'ai-strategy-selector') {
-        return {
-          data: {
-            executionPriority: 'Flash Loan Arbitrage',
-            recommendedStrategies: [{
-              confidence: 85.2,
-              recommendedAllocation: 60
-            }],
-            marketSentiment: 'BULLISH',
-            riskLevel: 'MEDIUM'
-          },
-          error: null
-        };
-      }
-      
-      return { data: null, error: null };
+
+      const data = await response.json();
+      return { data, error: null };
     }
   }
 };
 
-function generateMockOpportunities() {
-  const tokenPairs = ['ETH/USDC', 'BTC/USDT', 'WETH/DAI', 'MATIC/USDC', 'LINK/ETH', 'UNI/USDT'];
-  const exchanges = ['Uniswap V3', 'SushiSwap', 'PancakeSwap', 'Curve', 'Balancer', 'OKX'];
-  const opportunities = [];
-
-  for (let i = 0; i < Math.floor(Math.random() * 10) + 15; i++) {
-    const tokenPair = tokenPairs[Math.floor(Math.random() * tokenPairs.length)];
-    const buyExchange = exchanges[Math.floor(Math.random() * exchanges.length)];
-    const sellExchange = exchanges[Math.floor(Math.random() * exchanges.length)];
-    
-    if (buyExchange === sellExchange) continue;
-
-    const basePrice = Math.random() * 1000 + 100;
-    const profitMargin = Math.random() * 0.05 + 0.005; // 0.5% to 5.5%
-    
-    opportunities.push({
-      id: Math.random().toString(),
-      token_pair: tokenPair,
-      buy_exchange: buyExchange,
-      sell_exchange: sellExchange,
-      buy_price: basePrice,
-      sell_price: basePrice * (1 + profitMargin),
-      profit_amount: basePrice * profitMargin,
-      profit_percentage: profitMargin * 100,
-      volume_available: Math.random() * 100000 + 1000,
-      gas_cost: Math.random() * 50 + 10,
-      execution_time: Math.random() * 5 + 1,
-      risk_score: Math.floor(Math.random() * 5) + 1,
-      status: 'discovered',
-      created_at: new Date().toISOString(),
-      expires_at: new Date(Date.now() + 30000).toISOString()
-    });
-  }
-
-  return opportunities.slice(0, 25);
-}
 
 interface TradingStats {
   totalOpportunities: number;
@@ -175,7 +85,7 @@ export function useArbitrageEngine() {
     try {
       setIsLoading(true);
       
-      const { data, error } = await mockSupabase.functions.invoke('trading-engine', {
+      const { data, error } = await apiClient.functions.invoke('trading-engine', {
         body: {
           action: 'scan_opportunities'
         }
@@ -216,7 +126,7 @@ export function useArbitrageEngine() {
     try {
       setIsLoading(true);
       
-      const { data, error } = await mockSupabase.functions.invoke('trading-engine', {
+      const { data, error } = await apiClient.functions.invoke('trading-engine', {
         body: {
           action: 'execute_trade',
           data: {
@@ -266,7 +176,7 @@ export function useArbitrageEngine() {
   // Get portfolio status
   const getPortfolioStatus = useCallback(async () => {
     try {
-      const { data, error } = await mockSupabase.functions.invoke('trading-engine', {
+      const { data, error } = await apiClient.functions.invoke('trading-engine', {
         body: {
           action: 'get_portfolio_status'
         }
@@ -313,7 +223,7 @@ export function useArbitrageEngine() {
   // Get AI strategy recommendation
   const getAIRecommendation = useCallback(async (): Promise<void> => {
     try {
-      const { data, error } = await mockSupabase.functions.invoke('ai-strategy-selector', {
+      const { data, error } = await apiClient.functions.invoke('ai-strategy-selector', {
         body: {
           marketConditions: {
             volatility: Math.random() * 100,
