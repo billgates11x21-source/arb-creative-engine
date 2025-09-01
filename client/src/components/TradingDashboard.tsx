@@ -31,9 +31,11 @@ export function TradingDashboard() {
     aiRecommendation,
     isLoading,
     lastUpdate,
+    currentStrategy,
     toggleEngine,
     scanOpportunities,
     executeTrade,
+    getPortfolioStatus,
     getAIRecommendation
   } = useArbitrageEngine();
 
@@ -56,7 +58,7 @@ export function TradingDashboard() {
       // Use AI recommendation to select best strategy
       const strategyId = 'flash_loan'; // Default to flash loan strategy
       const amount = 1.0; // Default amount
-      
+
       await executeTrade(opportunityId, strategyId, amount);
       setSelectedOpportunity(null);
     } catch (error) {
@@ -75,7 +77,7 @@ export function TradingDashboard() {
           isEngineActive={isEngineActive}
           onToggleEngine={toggleEngine}
         />
-        
+
         {/* Control Panel */}
         <Card className="glass-card p-4 mb-6">
           <div className="flex items-center justify-between">
@@ -84,12 +86,19 @@ export function TradingDashboard() {
                 {isEngineActive ? <Activity className="w-3 h-3 mr-1" /> : <Pause className="w-3 h-3 mr-1" />}
                 {isEngineActive ? "SCANNING" : "PAUSED"}
               </Badge>
-              
+
               <Badge variant="outline" className="neon-border">
                 <Shield className="w-3 h-3 mr-1" />
                 MAINNET READY
               </Badge>
-              
+
+              {currentStrategy && (
+                <Badge variant="secondary">
+                  <Settings className="w-3 h-3 mr-1" />
+                  Strategy: {currentStrategy}
+                </Badge>
+              )}
+
               {aiRecommendation && (
                 <Badge variant="secondary">
                   <Brain className="w-3 h-3 mr-1" />
@@ -97,7 +106,7 @@ export function TradingDashboard() {
                 </Badge>
               )}
             </div>
-            
+
             <div className="flex items-center gap-2">
               <Button
                 variant="outline"
@@ -108,7 +117,7 @@ export function TradingDashboard() {
                 <RefreshCw className={`w-4 h-4 mr-2 ${autoRefresh ? 'animate-spin' : ''}`} />
                 Auto Refresh
               </Button>
-              
+
               <Button
                 variant="outline"
                 size="sm"
@@ -121,7 +130,7 @@ export function TradingDashboard() {
               </Button>
             </div>
           </div>
-          
+
           <div className="mt-4 text-xs text-muted-foreground">
             Last Updated: {lastUpdate.toLocaleTimeString()} • 
             Total Opportunities: {opportunities.length} • 
@@ -173,7 +182,7 @@ export function TradingDashboard() {
                 Real-time scanning across multiple DEXs • Mainnet ready • Simulation mode active
               </p>
             </div>
-            
+
             {/* High Profit Opportunities */}
             {highProfitOpportunities.length > 0 && (
               <div className="mb-8">
@@ -204,7 +213,7 @@ export function TradingDashboard() {
                 </div>
               </div>
             )}
-            
+
             {/* Medium Profit Opportunities */}
             {mediumProfitOpportunities.length > 0 && (
               <div className="mb-8">
@@ -234,7 +243,7 @@ export function TradingDashboard() {
                 </div>
               </div>
             )}
-            
+
             {opportunities.length === 0 && !isLoading && (
               <Card className="glass-card p-12 text-center">
                 <Activity className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />

@@ -77,6 +77,7 @@ export function useArbitrageEngine() {
   const [aiRecommendation, setAiRecommendation] = useState<AIRecommendation | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
+  const [currentStrategy, setCurrentStrategy] = useState<string>('arbitrage');
   
   const { toast } = useToast();
 
@@ -95,6 +96,7 @@ export function useArbitrageEngine() {
 
       setOpportunities(data.opportunities || []);
       setAiRecommendation(data.aiRecommendation);
+      setCurrentStrategy(data.strategy || 'arbitrage');
       setLastUpdate(new Date());
       
       // Update stats
@@ -104,9 +106,17 @@ export function useArbitrageEngine() {
         activeArbitrage: data.opportunities?.filter((o: ArbitrageOpportunity) => o.status === 'executing').length || 0,
       }));
 
+      const strategyNames = {
+        arbitrage: 'Arbitrage',
+        yield_farming: 'Yield Farming',
+        lending: 'Lending',
+        trending_momentum: 'Trending Momentum',
+        mock_arbitrage: 'Mock Arbitrage'
+      };
+
       toast({
         title: "Opportunities Updated",
-        description: `Found ${data.opportunities?.length || 0} arbitrage opportunities`,
+        description: `${strategyNames[data.strategy as keyof typeof strategyNames] || data.strategy}: Found ${data.opportunities?.length || 0} opportunities`,
       });
 
     } catch (error) {
@@ -276,6 +286,7 @@ export function useArbitrageEngine() {
     aiRecommendation,
     isLoading,
     lastUpdate,
+    currentStrategy,
     
     // Actions
     toggleEngine,

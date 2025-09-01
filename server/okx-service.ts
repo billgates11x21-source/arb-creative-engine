@@ -205,24 +205,30 @@ class OKXService {
     // Calculate potential profit percentage
     const profitPercentage = Math.abs((price2 - price1) / price1) * 100;
     
-    // Only consider opportunities with > 0.3% profit potential
-    if (profitPercentage < 0.3) return null;
+    // Only consider opportunities with > 0.3% profit potential and < 50% to avoid overflow
+    if (profitPercentage < 0.3 || profitPercentage > 50) return null;
     
     const buyExchange = price1 < price2 ? 'OKX Spot' : 'OKX Futures';
     const sellExchange = price1 < price2 ? 'OKX Futures' : 'OKX Spot';
     const buyPrice = Math.min(price1, price2);
     const sellPrice = Math.max(price1, price2);
     
+    // Ensure values fit database constraints (precision 5, scale 2 = max 999.99)
+    const constrainedBuyPrice = Math.min(buyPrice, 999.99);
+    const constrainedSellPrice = Math.min(sellPrice, 999.99);
+    const constrainedProfitAmount = Math.min(sellPrice - buyPrice, 99.99);
+    const constrainedVolume = Math.min(parseFloat(ticker1.vol24h), parseFloat(ticker2.vol24h), 999.99);
+    
     return {
       id: `${ticker1.instId}-${ticker2.instId}-${Date.now()}`,
       token_pair: `${ticker1.instId}/${ticker2.instId}`,
       buy_exchange: buyExchange,
       sell_exchange: sellExchange,
-      buy_price: buyPrice,
-      sell_price: sellPrice,
-      profit_amount: sellPrice - buyPrice,
-      profit_percentage: profitPercentage,
-      volume_available: Math.min(parseFloat(ticker1.vol24h), parseFloat(ticker2.vol24h)),
+      buy_price: Math.round(constrainedBuyPrice * 100) / 100,
+      sell_price: Math.round(constrainedSellPrice * 100) / 100,
+      profit_amount: Math.round(constrainedProfitAmount * 100) / 100,
+      profit_percentage: Math.min(Math.round(profitPercentage * 100) / 100, 99.99),
+      volume_available: Math.round(constrainedVolume * 100) / 100,
       gas_cost: 0, // No gas cost for CEX trading
       execution_time: 0.5, // Fast execution on CEX
       risk_score: profitPercentage > 2 ? 2 : 1, // Lower risk for CEX
