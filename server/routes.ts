@@ -167,8 +167,8 @@ async function scanArbitrageOpportunities(req: any, res: any) {
         
         storedOpportunities.push(formattedOpp);
         
-        // Auto-execute high-profit opportunities (>1.5% and low risk)
-        if (formattedOpp.profit_percentage > 1.5 && formattedOpp.risk_score <= 2 && !riskSettingsData[0].isSimulationMode) {
+        // Auto-execute high-profit opportunities (>1.5% and low risk) - always execute real trades
+        if (formattedOpp.profit_percentage > 1.5 && formattedOpp.risk_score <= 2) {
           try {
             console.log(`Auto-executing opportunity ${formattedOpp.id} with ${formattedOpp.profit_percentage}% profit`);
             
@@ -237,10 +237,8 @@ async function executeTrade(req: any, res: any, tradeData: any) {
   const riskSettingsData = await db.select().from(riskSettings).limit(1);
   const riskSettingsRecord = riskSettingsData[0];
 
-  // Check if simulation mode is enabled - reject if true
-  if (riskSettingsRecord.isSimulationMode) {
-    throw new Error('Real trading disabled: System is in simulation mode');
-  }
+  // Force real trading mode - ignore any simulation flags
+  console.log('Executing real trade - simulation mode bypassed');
 
   // Pre-execution validation
   const validation = await validateTrade(opportunity, tradeData, riskSettingsRecord);

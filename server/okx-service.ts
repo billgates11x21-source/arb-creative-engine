@@ -206,16 +206,22 @@ class OKXService {
         const momentum = Math.random() * 5; // Simplified momentum calculation
         
         if (momentum > 2) {
+          const safeBuyPrice = Math.min(Math.max(currentPrice, 0.01), 999.99999999);
+          const safeSellPrice = Math.min(Math.max(currentPrice * 1.02, 0.01), 999.99999999);
+          const safeProfitAmount = Math.min(safeSellPrice - safeBuyPrice, 99.99999999);
+          const safeProfitPercentage = Math.min(Math.max(2.0, 0.01), 99.99);
+          const safeVolume = Math.min(Math.max(volume * 0.00001, 0.01), 999999999999999.99);
+          
           opportunities.push({
             id: `momentum-${ticker.instId}-${Date.now()}`,
             token_pair: ticker.instId.replace('-', '/'),
             buy_exchange: 'OKX Spot',
             sell_exchange: 'OKX Spot',
-            buy_price: Math.min(currentPrice, 99.99),
-            sell_price: Math.min(currentPrice * 1.02, 99.99),
-            profit_amount: Math.min(currentPrice * 0.02, 9.99),
-            profit_percentage: Math.min(2.0, 9.99),
-            volume_available: Math.min(volume * 0.0001, 9.99), // Much smaller to avoid overflow
+            buy_price: safeBuyPrice,
+            sell_price: safeSellPrice,
+            profit_amount: safeProfitAmount,
+            profit_percentage: safeProfitPercentage,
+            volume_available: safeVolume,
             gas_cost: 0,
             execution_time: 1.0,
             risk_score: 3,
@@ -244,16 +250,22 @@ class OKXService {
         const yieldRate = Math.random() * 3; // 0-3% yield
         
         if (yieldRate > 1) {
+          const safeBuyPrice = Math.min(Math.max(currentPrice, 0.01), 999.99999999);
+          const safeSellPrice = Math.min(Math.max(currentPrice * (1 + yieldRate/100), 0.01), 999.99999999);
+          const safeProfitAmount = Math.min(safeSellPrice - safeBuyPrice, 99.99999999);
+          const safeProfitPercentage = Math.min(Math.max(yieldRate, 0.01), 99.99);
+          const safeVolume = Math.min(Math.max(parseFloat(ticker.vol24h || '0') * 0.00001, 0.01), 999999999999999.99);
+          
           opportunities.push({
             id: `yield-${ticker.instId}-${Date.now()}`,
             token_pair: ticker.instId.replace('-', '/'),
             buy_exchange: 'OKX Earn',
             sell_exchange: 'OKX Earn',
-            buy_price: Math.min(currentPrice, 99.99),
-            sell_price: Math.min(currentPrice * (1 + yieldRate/100), 99.99),
-            profit_amount: Math.min(currentPrice * (yieldRate/100), 9.99),
-            profit_percentage: Math.min(yieldRate, 9.99),
-            volume_available: Math.min(parseFloat(ticker.vol24h || '0') * 0.0001, 9.99),
+            buy_price: safeBuyPrice,
+            sell_price: safeSellPrice,
+            profit_amount: safeProfitAmount,
+            profit_percentage: safeProfitPercentage,
+            volume_available: safeVolume,
             gas_cost: 0,
             execution_time: 24.0,
             risk_score: 1,
@@ -319,16 +331,16 @@ class OKXService {
     // Only consider real arbitrage opportunities with meaningful profit
     if (profitPercentage < 0.1) return null;
     
-    // Strict database precision limits - decimal(5,2) means 5 digits total, 2 after decimal
-    const constrainedBuyPrice = Math.min(Math.max(buyPrice, 0.01), 99.99);
-    const constrainedSellPrice = Math.min(Math.max(sellPrice, 0.01), 99.99);
-    const constrainedProfitAmount = Math.min(constrainedSellPrice - constrainedBuyPrice, 9.99);
-    const constrainedProfitPercentage = Math.min(profitPercentage, 9.99);
+    // Strict database precision limits to prevent overflow
+    const constrainedBuyPrice = Math.min(Math.max(buyPrice, 0.01), 999.99999999);
+    const constrainedSellPrice = Math.min(Math.max(sellPrice, 0.01), 999.99999999);
+    const constrainedProfitAmount = Math.min(constrainedSellPrice - constrainedBuyPrice, 99.99999999);
+    const constrainedProfitPercentage = Math.min(Math.max(profitPercentage, 0.01), 99.99);
     
-    // Calculate volume - keep it small to avoid overflow
+    // Calculate volume - use minimal values to prevent database overflow
     const volume1 = parseFloat(ticker1.vol24h || '0');
     const volume2 = parseFloat(ticker2.vol24h || '0');
-    const constrainedVolume = Math.min(Math.min(volume1, volume2) * 0.0001, 9.99); // Much smaller percentage
+    const constrainedVolume = Math.min(Math.min(volume1, volume2) * 0.00001, 99.99); // Very small percentage
     
     return {
       id: `${buyExchange}-${sellExchange}-${Date.now()}`,
