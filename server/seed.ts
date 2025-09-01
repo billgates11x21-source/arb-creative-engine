@@ -66,12 +66,12 @@ export async function seedDatabase() {
     }
   ]).onConflictDoNothing();
 
-  // Create default risk settings
+  // Create default risk settings for live trading
   await db.insert(riskSettings).values({
     minProfitThreshold: "0.50",
     maxPositionSize: "10000.00",
     maxRiskScore: 3,
-    isSimulationMode: true
+    isSimulationMode: false
   }).onConflictDoNothing();
 
   console.log("Database seeded successfully!");

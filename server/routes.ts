@@ -82,7 +82,7 @@ async function scanArbitrageOpportunities(req: any, res: any) {
     riskSettingsData = await db.insert(riskSettings).values({}).returning();
   }
 
-  // Get real opportunities from OKX only
+  // Get real opportunities from OKX with fallback strategies
   let opportunities = [];
   let strategyUsed = 'arbitrage';
   
@@ -90,10 +90,21 @@ async function scanArbitrageOpportunities(req: any, res: any) {
     opportunities = await okxService.scanRealOpportunities();
     
     if (opportunities.length === 0) {
-      console.log('No real arbitrage opportunities found at this time');
-      strategyUsed = 'no_opportunities';
+      console.log('No opportunities found with any strategy');
+      strategyUsed = 'scanning';
     } else {
-      console.log(`Found ${opportunities.length} real arbitrage opportunities from OKX`);
+      // Determine which strategy was used based on opportunity IDs
+      const firstOpp = opportunities[0];
+      if (firstOpp.id.startsWith('momentum-')) {
+        strategyUsed = 'trending_momentum';
+        console.log(`Switched to trending momentum strategy: Found ${opportunities.length} opportunities`);
+      } else if (firstOpp.id.startsWith('yield-')) {
+        strategyUsed = 'yield_farming';
+        console.log(`Switched to yield farming strategy: Found ${opportunities.length} opportunities`);
+      } else {
+        strategyUsed = 'arbitrage';
+        console.log(`Using arbitrage strategy: Found ${opportunities.length} opportunities`);
+      }
     }
   } catch (error) {
     console.error('Error getting real opportunities:', error);
@@ -180,16 +191,26 @@ async function executeTrade(req: any, res: any, tradeData: any) {
   const riskSettingsData = await db.select().from(riskSettings).limit(1);
   const riskSettingsRecord = riskSettingsData[0];
 
+  // Check if simulation mode is enabled - reject if true
+  if (riskSettingsRecord.isSimulationMode) {
+    throw new Error('Real trading disabled: System is in simulation mode');
+  }
+
   // Pre-execution validation
   const validation = await validateTrade(opportunity, tradeData, riskSettingsRecord);
   if (!validation.isValid) {
     throw new Error(`Trade validation failed: ${validation.reason}`);
   }
 
+  // Ensure minimum profit threshold for real trades
+  if (parseFloat(opportunity.profitPercentage) < 0.5) {
+    throw new Error('Profit percentage too low for real trade execution');
+  }
+
   // Execute real trade using OKX only
   const executionResult = await okxService.executeRealTrade(opportunity, tradeData.amount);
 
-  // Record the trade
+  // Record the real trade
   const trade = await db.insert(executedTrades).values({
     opportunityId: parseInt(opportunityId),
     strategyId: strategyId ? parseInt(strategyId) : null,
@@ -199,16 +220,18 @@ async function executeTrade(req: any, res: any, tradeData: any) {
     sellExchange: opportunity.sellExchange,
     amountTraded: amount.toString(),
     profitRealized: executionResult.actualProfit.toString(),
-    gasUsed: executionResult.gasUsed,
+    gasUsed: executionResult.gasUsed || 0,
     gasPrice: executionResult.gasPrice.toString(),
     executionTime: executionResult.executionTime.toString(),
-    status: 'pending'
+    status: executionResult.success ? 'confirmed' : 'failed'
   }).returning();
 
   return res.json({
     success: true,
     trade: trade[0],
     executionResult,
+    realTrade: true,
+    actualProfit: executionResult.actualProfit,
     timestamp: new Date().toISOString()
   });
 }
@@ -308,9 +331,15 @@ async function validateTrade(opportunity: any, tradeData: any, riskSettingsRecor
 
 
 async function callAIStrategySelector(opportunities: any[]) {
-  // Only return data when real opportunities exist
+  // Return recommendation even when no opportunities exist
   if (opportunities.length === 0) {
-    return null;
+    return {
+      recommendedStrategy: 'Scanning for opportunities...',
+      confidence: 0,
+      allocation: 0,
+      marketSentiment: 'NEUTRAL',
+      riskLevel: 'LOW'
+    };
   }
 
   // Calculate real metrics from actual opportunities
@@ -318,10 +347,20 @@ async function callAIStrategySelector(opportunities: any[]) {
   const totalVolume = opportunities.reduce((sum, opp) => sum + opp.volume_available, 0);
   const highProfitCount = opportunities.filter(opp => opp.profit_percentage > 2).length;
 
+  // Determine strategy based on opportunity types
+  let strategyName = 'Standard Arbitrage';
+  if (opportunities[0].id.startsWith('momentum-')) {
+    strategyName = 'Trending Momentum';
+  } else if (opportunities[0].id.startsWith('yield-')) {
+    strategyName = 'Yield Farming';
+  } else if (highProfitCount > 0) {
+    strategyName = 'High Profit Arbitrage';
+  }
+
   return {
-    recommendedStrategy: highProfitCount > 0 ? 'High Profit Arbitrage' : 'Standard Arbitrage',
-    confidence: Math.min(avgProfitPercentage * 10, 100),
-    allocation: Math.min(totalVolume / 100, 100),
+    recommendedStrategy: strategyName,
+    confidence: Math.min(avgProfitPercentage * 20, 100),
+    allocation: Math.min(totalVolume * 10, 100),
     marketSentiment: avgProfitPercentage > 2 ? 'BULLISH' : avgProfitPercentage > 1 ? 'NEUTRAL' : 'CAUTIOUS',
     riskLevel: avgProfitPercentage > 3 ? 'HIGH' : avgProfitPercentage > 1.5 ? 'MEDIUM' : 'LOW'
   };

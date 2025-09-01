@@ -6,7 +6,7 @@ const apiClient = {
   functions: {
     invoke: async (functionName: string, options: any) => {
       console.log(`API call: ${functionName}`, options);
-      
+
       const endpoint = `/api/${functionName}`;
       const response = await fetch(endpoint, {
         method: 'POST',
@@ -78,14 +78,18 @@ export function useArbitrageEngine() {
   const [isLoading, setIsLoading] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
   const [currentStrategy, setCurrentStrategy] = useState<string>('arbitrage');
-  
+
+  // Added state for selected opportunity to manage UI state
+  const [selectedOpportunity, setSelectedOpportunity] = useState<string | null>(null);
+
+
   const { toast } = useToast();
 
   // Scan for arbitrage opportunities
   const scanOpportunities = useCallback(async () => {
     try {
       setIsLoading(true);
-      
+
       const { data, error } = await apiClient.functions.invoke('trading-engine', {
         body: {
           action: 'scan_opportunities'
@@ -98,7 +102,7 @@ export function useArbitrageEngine() {
       setAiRecommendation(data.aiRecommendation);
       setCurrentStrategy(data.strategy || 'arbitrage');
       setLastUpdate(new Date());
-      
+
       // Update stats
       setTradingStats(prev => ({
         ...prev,
@@ -135,7 +139,7 @@ export function useArbitrageEngine() {
   const executeTrade = useCallback(async (opportunityId: string, strategyId: string, amount: number) => {
     try {
       setIsLoading(true);
-      
+
       const { data, error } = await apiClient.functions.invoke('trading-engine', {
         body: {
           action: 'execute_trade',
@@ -167,7 +171,7 @@ export function useArbitrageEngine() {
 
       // Refresh portfolio status
       await getPortfolioStatus();
-      
+
       return data;
 
     } catch (error) {
@@ -213,11 +217,11 @@ export function useArbitrageEngine() {
   const toggleEngine = useCallback(async () => {
     const newState = !isEngineActive;
     setIsEngineActive(newState);
-    
+
     if (newState) {
       // Start scanning when engine is activated
       await scanOpportunities();
-      
+
       toast({
         title: "Engine Started",
         description: "ARB Creative Engine is now scanning for opportunities",
@@ -261,6 +265,35 @@ export function useArbitrageEngine() {
     }
   }, [opportunities]);
 
+  // Handle trade execution with updated logic
+  const handleExecuteTrade = async (opportunityId: string) => {
+    try {
+      // Determine strategy based on opportunity type
+      const opportunity = opportunities.find(o => o.id === opportunityId);
+      if (!opportunity) {
+        throw new Error('Opportunity not found');
+      }
+
+      let strategyId = 'cross_exchange'; // Default
+      if (opportunity.id.startsWith('momentum-')) {
+        strategyId = 'trending_momentum';
+      } else if (opportunity.id.startsWith('yield-')) {
+        strategyId = 'yield_farming';
+      } else {
+        strategyId = 'flash_loan';
+      }
+
+      // Calculate safe trade amount based on available volume
+      const safeAmount = Math.min(opportunity.volume_available * 0.1, 1.0);
+
+      await executeTrade(opportunityId, strategyId, safeAmount);
+      setSelectedOpportunity(null);
+    } catch (error) {
+      console.error('Trade execution failed:', error);
+    }
+  };
+
+
   // Auto-refresh when engine is active
   useEffect(() => {
     if (!isEngineActive) return;
@@ -287,12 +320,14 @@ export function useArbitrageEngine() {
     isLoading,
     lastUpdate,
     currentStrategy,
-    
+    selectedOpportunity, // Expose selectedOpportunity
+
     // Actions
     toggleEngine,
     scanOpportunities,
     executeTrade,
     getPortfolioStatus,
-    getAIRecommendation
+    getAIRecommendation,
+    handleExecuteTrade // Expose handleExecuteTrade
   };
 }
