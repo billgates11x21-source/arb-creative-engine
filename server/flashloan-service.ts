@@ -1,0 +1,426 @@
+
+import { ethers } from 'ethers';
+import { okxService } from './okx-service';
+
+interface FlashLoanConfig {
+    contractAddress: string;
+    abi: any[];
+    provider: ethers.JsonRpcProvider;
+    signer: ethers.Wallet;
+}
+
+interface FlashLoanOpportunity {
+    asset: string;
+    amount: number;
+    dexA: string;
+    dexB: string;
+    estimatedProfit: number;
+    profitPercentage: number;
+    gasEstimate: number;
+}
+
+class FlashLoanService {
+    private config: FlashLoanConfig | null = null;
+    private contract: ethers.Contract | null = null;
+    private isInitialized = false;
+
+    async initialize(privateKey: string): Promise<boolean> {
+        try {
+            console.log("🔧 Initializing Flash Loan Service on Base network...");
+            
+            // Base network configuration
+            const BASE_RPC_URL = "https://mainnet.base.org";
+            const provider = new ethers.JsonRpcProvider(BASE_RPC_URL);
+            const signer = new ethers.Wallet(privateKey, provider);
+            
+            console.log("📋 Flash loan wallet:", signer.address);
+            
+            // Check if deployment info exists
+            const deploymentInfo = await this.loadDeploymentInfo();
+            if (!deploymentInfo) {
+                console.log("⚠️ No deployment found. Please deploy contract first.");
+                return false;
+            }
+            
+            this.config = {
+                contractAddress: deploymentInfo.contractAddress,
+                abi: deploymentInfo.abi,
+                provider,
+                signer
+            };
+            
+            this.contract = new ethers.Contract(
+                this.config.contractAddress,
+                this.config.abi,
+                this.config.signer
+            );
+            
+            // Authorize this service to call the contract
+            await this.authorizeService();
+            
+            this.isInitialized = true;
+            console.log("✅ Flash Loan Service initialized successfully");
+            return true;
+            
+        } catch (error) {
+            console.error("❌ Failed to initialize Flash Loan Service:", error);
+            return false;
+        }
+    }
+    
+    private async loadDeploymentInfo(): Promise<any> {
+        try {
+            const fs = require('fs');
+            const path = require('path');
+            const deploymentPath = path.join(__dirname, '../contracts/deployment-info.json');
+            
+            if (fs.existsSync(deploymentPath)) {
+                const data = fs.readFileSync(deploymentPath, 'utf8');
+                return JSON.parse(data);
+            }
+            return null;
+        } catch (error) {
+            console.error("Error loading deployment info:", error);
+            return null;
+        }
+    }
+    
+    private async authorizeService(): Promise<void> {
+        try {
+            if (!this.contract || !this.config) return;
+            
+            // Add this service as authorized caller
+            const tx = await this.contract.addAuthorizedCaller(this.config.signer.address);
+            await tx.wait();
+            
+            console.log("🔐 Service authorized for flash loan execution");
+        } catch (error) {
+            console.error("Error authorizing service:", error);
+        }
+    }
+    
+    async scanFlashLoanOpportunities(): Promise<FlashLoanOpportunity[]> {
+        if (!this.isInitialized) {
+            console.log("⚠️ Flash loan service not initialized");
+            return [];
+        }
+        
+        try {
+            const opportunities: FlashLoanOpportunity[] = [];
+            
+            // Base network DEX configurations
+            const baseDEXes = [
+                {
+                    name: 'Aerodrome',
+                    router: '0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43',
+                    fee: 0.05
+                },
+                {
+                    name: 'Uniswap V3',
+                    router: '0x2626664c2603336E57B271c5C0b26F421741e481',
+                    fee: 0.05
+                },
+                {
+                    name: 'Equalizer',
+                    router: '0x8c0f6a1f6a7f4e0e4f4c4f4a4f4e4f4e4f4e4f4e',
+                    fee: 0.05
+                }
+            ];
+            
+            // Token pairs on Base
+            const basePairs = [
+                { tokenA: '0x4200000000000000000000000000000000000006', tokenB: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', symbol: 'WETH/USDC' },
+                { tokenA: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', tokenB: '0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb', symbol: 'USDC/DAI' }
+            ];
+            
+            // Scan for arbitrage opportunities across DEXes
+            for (const pair of basePairs) {
+                for (let i = 0; i < baseDEXes.length; i++) {
+                    for (let j = i + 1; j < baseDEXes.length; j++) {
+                        const dexA = baseDEXes[i];
+                        const dexB = baseDEXes[j];
+                        
+                        // Calculate potential profit using smart contract
+                        const flashLoanAmount = ethers.parseEther("1"); // 1 ETH or equivalent
+                        
+                        try {
+                            const routeA = this.encodeRoute(dexA.name, [pair.tokenA, pair.tokenB]);
+                            const routeB = this.encodeRoute(dexB.name, [pair.tokenB, pair.tokenA]);
+                            
+                            const [estimatedProfit, isProfitable] = await this.contract!.calculatePotentialProfit(
+                                pair.tokenA,
+                                pair.tokenB,
+                                flashLoanAmount,
+                                dexA.router,
+                                dexB.router,
+                                routeA,
+                                routeB
+                            );
+                            
+                            if (isProfitable && estimatedProfit > 0) {
+                                const profitETH = ethers.formatEther(estimatedProfit);
+                                const profitPercentage = (parseFloat(profitETH) / 1) * 100;
+                                
+                                opportunities.push({
+                                    asset: pair.tokenA,
+                                    amount: 1,
+                                    dexA: dexA.name,
+                                    dexB: dexB.name,
+                                    estimatedProfit: parseFloat(profitETH),
+                                    profitPercentage,
+                                    gasEstimate: 800000 // Estimated gas for flash loan arbitrage
+                                });
+                            }
+                        } catch (error) {
+                            console.error(`Error calculating profit for ${pair.symbol}:`, error);
+                        }
+                    }
+                }
+            }
+            
+            console.log(`🔍 Found ${opportunities.length} flash loan opportunities`);
+            return opportunities.slice(0, 10);
+            
+        } catch (error) {
+            console.error("Error scanning flash loan opportunities:", error);
+            return [];
+        }
+    }
+    
+    private encodeRoute(dexName: string, path: string[]): string {
+        if (dexName === 'Equalizer') {
+            // Equalizer uses stable flag
+            return ethers.AbiCoder.defaultAbiCoder().encode(['bool'], [false]);
+        } else if (dexName === 'Uniswap V3') {
+            // Uniswap uses path array
+            return ethers.AbiCoder.defaultAbiCoder().encode(['address[]'], [path]);
+        } else if (dexName === 'Aerodrome') {
+            // Aerodrome uses Route struct array
+            const routes = [{
+                from: path[0],
+                to: path[1],
+                stable: false,
+                factory: '0x420DD381b31aEf6683db6B902084cB0FFECe40Da'
+            }];
+            return ethers.AbiCoder.defaultAbiCoder().encode(['tuple(address,address,bool,address)[]'], [routes]);
+        }
+        return '0x';
+    }
+    
+    async executeFlashLoanArbitrage(opportunity: FlashLoanOpportunity): Promise<any> {
+        if (!this.isInitialized || !this.contract) {
+            throw new Error("Flash loan service not initialized");
+        }
+        
+        try {
+            console.log(`⚡ Executing flash loan arbitrage for ${opportunity.dexA} → ${opportunity.dexB}`);
+            
+            const amount = ethers.parseEther(opportunity.amount.toString());
+            
+            // Prepare arbitrage parameters
+            const params = {
+                tokenIn: opportunity.asset,
+                tokenOut: opportunity.asset === '0x4200000000000000000000000000000000000006' 
+                    ? '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' // WETH → USDC
+                    : '0x4200000000000000000000000000000000000006', // USDC → WETH
+                amountIn: amount,
+                dexA: this.getDEXRouter(opportunity.dexA),
+                dexB: this.getDEXRouter(opportunity.dexB),
+                routeA: this.encodeRoute(opportunity.dexA, [opportunity.asset, this.getCounterToken(opportunity.asset)]),
+                routeB: this.encodeRoute(opportunity.dexB, [this.getCounterToken(opportunity.asset), opportunity.asset]),
+                minProfit: ethers.parseEther((opportunity.estimatedProfit * 0.8).toString()) // 80% of estimated profit
+            };
+            
+            // Use Balancer for flash loan (no fee)
+            const flashLoanProvider = '0xBA12222222228d8Ba445958a75a0704d566BF2C8';
+            
+            // Execute flash loan arbitrage
+            const tx = await this.contract.executeFlashLoanArbitrage(
+                flashLoanProvider,
+                opportunity.asset,
+                amount,
+                params,
+                {
+                    gasLimit: opportunity.gasEstimate,
+                    gasPrice: ethers.parseUnits('0.001', 'gwei') // Base has very low gas prices
+                }
+            );
+            
+            console.log("📝 Transaction submitted:", tx.hash);
+            
+            // Wait for confirmation
+            const receipt = await tx.wait();
+            
+            console.log("✅ Flash loan arbitrage executed successfully");
+            console.log("⛽ Gas used:", receipt.gasUsed.toString());
+            
+            // Parse events to get actual profit
+            const events = receipt.logs?.filter((log: any) => {
+                try {
+                    return this.contract!.interface.parseLog(log);
+                } catch {
+                    return false;
+                }
+            });
+            
+            let actualProfit = 0;
+            for (const event of events || []) {
+                const parsed = this.contract.interface.parseLog(event);
+                if (parsed?.name === 'ArbitrageExecuted') {
+                    actualProfit = parseFloat(ethers.formatEther(parsed.args.profit));
+                    break;
+                }
+            }
+            
+            return {
+                success: true,
+                txHash: tx.hash,
+                actualProfit,
+                gasUsed: receipt.gasUsed.toString(),
+                blockNumber: receipt.blockNumber,
+                explorerUrl: `https://basescan.org/tx/${tx.hash}`
+            };
+            
+        } catch (error) {
+            console.error("❌ Flash loan execution failed:", error);
+            return {
+                success: false,
+                error: error.message,
+                actualProfit: 0
+            };
+        }
+    }
+    
+    private getDEXRouter(dexName: string): string {
+        const routers: { [key: string]: string } = {
+            'Aerodrome': '0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43',
+            'Uniswap V3': '0x2626664c2603336E57B271c5C0b26F421741e481',
+            'Equalizer': '0x8c0f6a1f6a7f4e0e4f4c4f4a4f4e4f4e4f4e4f4e'
+        };
+        return routers[dexName] || routers['Aerodrome'];
+    }
+    
+    private getCounterToken(token: string): string {
+        // WETH on Base
+        if (token === '0x4200000000000000000000000000000000000006') {
+            return '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'; // USDC
+        }
+        // USDC on Base
+        if (token === '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913') {
+            return '0x4200000000000000000000000000000000000006'; // WETH
+        }
+        return '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'; // Default to USDC
+    }
+    
+    async getContractStats(): Promise<any> {
+        if (!this.contract) return null;
+        
+        try {
+            const [totalProfit, totalTrades, minProfitBps, maxSlippage] = await this.contract.getContractStats();
+            
+            return {
+                totalProfit: ethers.formatEther(totalProfit),
+                totalTrades: totalTrades.toString(),
+                minProfitBps: minProfitBps.toString(),
+                maxSlippage: maxSlippage.toString(),
+                contractAddress: this.config?.contractAddress
+            };
+        } catch (error) {
+            console.error("Error getting contract stats:", error);
+            return null;
+        }
+    }
+    
+    async validateArbitrageOpportunity(opportunity: any): Promise<boolean> {
+        if (!this.contract) return false;
+        
+        try {
+            // Convert opportunity to smart contract format
+            const tokenA = this.getTokenAddress(opportunity.token_pair.split('/')[0]);
+            const tokenB = this.getTokenAddress(opportunity.token_pair.split('/')[1]);
+            const amount = ethers.parseEther(opportunity.amount?.toString() || "1");
+            
+            const dexARouter = this.getDEXRouter(opportunity.buy_exchange);
+            const dexBRouter = this.getDEXRouter(opportunity.sell_exchange);
+            
+            const routeA = this.encodeRoute(opportunity.buy_exchange, [tokenA, tokenB]);
+            const routeB = this.encodeRoute(opportunity.sell_exchange, [tokenB, tokenA]);
+            
+            const [estimatedProfit, isProfitable] = await this.contract.calculatePotentialProfit(
+                tokenA,
+                tokenB,
+                amount,
+                dexARouter,
+                dexBRouter,
+                routeA,
+                routeB
+            );
+            
+            const profitETH = parseFloat(ethers.formatEther(estimatedProfit));
+            const profitPercentage = (profitETH / parseFloat(ethers.formatEther(amount))) * 100;
+            
+            console.log(`🔍 Smart contract validation: ${profitPercentage.toFixed(3)}% profit, isProfitable: ${isProfitable}`);
+            
+            return isProfitable && profitPercentage >= 0.5; // Minimum 0.5% profit
+            
+        } catch (error) {
+            console.error("Error validating arbitrage opportunity:", error);
+            return false;
+        }
+    }
+    
+    private getTokenAddress(symbol: string): string {
+        const baseTokens: { [key: string]: string } = {
+            'WETH': '0x4200000000000000000000000000000000000006',
+            'ETH': '0x4200000000000000000000000000000000000006',
+            'USDC': '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+            'DAI': '0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb'
+        };
+        
+        return baseTokens[symbol.toUpperCase()] || baseTokens['USDC'];
+    }
+    
+    async integrateWithOKXTrading(): Promise<void> {
+        console.log("🔗 Integrating flash loans with OKX trading system...");
+        
+        // Monitor OKX opportunities and enhance them with flash loans
+        setInterval(async () => {
+            try {
+                const okxOpportunities = await okxService.scanRealOpportunities();
+                
+                for (const opportunity of okxOpportunities) {
+                    // Check if opportunity can benefit from flash loan leverage
+                    if (parseFloat(opportunity.profit_percentage) >= 1.0) { // 1%+ profit opportunities
+                        const isValid = await this.validateArbitrageOpportunity(opportunity);
+                        
+                        if (isValid) {
+                            console.log(`⚡ Flash loan opportunity detected: ${opportunity.token_pair} (+${opportunity.profit_percentage}%)`);
+                            
+                            // Convert to flash loan opportunity
+                            const flashLoanOp: FlashLoanOpportunity = {
+                                asset: this.getTokenAddress(opportunity.token_pair.split('/')[0]),
+                                amount: parseFloat(opportunity.volume_available) || 1,
+                                dexA: opportunity.buy_exchange,
+                                dexB: opportunity.sell_exchange,
+                                estimatedProfit: parseFloat(opportunity.profit_amount),
+                                profitPercentage: parseFloat(opportunity.profit_percentage),
+                                gasEstimate: 800000
+                            };
+                            
+                            // Execute flash loan arbitrage
+                            const result = await this.executeFlashLoanArbitrage(flashLoanOp);
+                            
+                            if (result.success) {
+                                console.log(`🎊 Flash loan arbitrage SUCCESS: ${result.actualProfit} ETH profit`);
+                            }
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error("Error in flash loan integration:", error);
+            }
+        }, 30000); // Check every 30 seconds
+    }
+}
+
+export const flashLoanService = new FlashLoanService();

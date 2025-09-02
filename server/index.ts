@@ -2,6 +2,8 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { backgroundEngine } from "./background-engine";
 import { setupVite, serveStatic, log } from "./vite";
+import { okxService } from "./services/okxService";
+import { flashLoanService } from "./services/flashLoanService";
 
 const app = express();
 app.use(express.json());
@@ -67,7 +69,20 @@ app.use((req, res, next) => {
     reusePort: true,
   }, () => {
     log(`serving on port ${port}`);
-    
+
+    // Initialize OKX service
+    const okxInitialized = okxService.initialize();
+    console.log('OKX service initialized:', okxInitialized);
+
+    // Initialize Flash Loan service (will check for deployed contract)
+    const flashLoanInitialized = flashLoanService.initialize(process.env.PRIVATE_KEY || '');
+    console.log('Flash Loan service initialized:', flashLoanInitialized);
+
+    if (flashLoanInitialized) {
+      // Start flash loan integration with OKX
+      flashLoanService.integrateWithOKXTrading();
+    }
+
     // Auto-start background engine in production
     if (process.env.NODE_ENV === 'production') {
       setTimeout(async () => {

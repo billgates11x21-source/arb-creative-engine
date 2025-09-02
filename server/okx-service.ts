@@ -632,9 +632,46 @@ class OKXService {
 
       console.log(`🤖 AI executing profitable cycle: ${tradeAmount} ${baseCurrency} (${tradeValue} ${quoteCurrency})`);
 
+      // Check if opportunity qualifies for flash loan enhancement
+      const profitPct = parseFloat(opportunity.profit_percentage) || 0;
+      if (profitPct >= 1.5 && ['ETH', 'WETH'].includes(baseCurrency)) {
+        console.log(`⚡ Opportunity qualifies for flash loan enhancement: ${profitPct}%`);
+        
+        try {
+          const { flashLoanService } = require('./flashloan-service');
+          const flashLoanResult = await flashLoanService.executeFlashLoanArbitrage({
+            asset: this.getTokenAddress(baseCurrency),
+            amount: tradeAmount * 3, // 3x leverage with flash loan
+            dexA: 'Aerodrome',
+            dexB: 'Uniswap V3',
+            estimatedProfit: profitPct * tradeAmount * 3 / 100,
+            profitPercentage: profitPct,
+            gasEstimate: 800000
+          });
+          
+          if (flashLoanResult.success) {
+            console.log(`🚀 Flash loan arbitrage executed: ${flashLoanResult.actualProfit} ETH profit`);
+            return {
+              success: true,
+              txHash: flashLoanResult.txHash,
+              actualProfit: flashLoanResult.actualProfit,
+              actualAmount: tradeAmount * 3,
+              gasUsed: flashLoanResult.gasUsed,
+              gasPrice: 0,
+              executionTime: 8.0,
+              action: 'flash_loan_arbitrage',
+              explorerUrl: flashLoanResult.explorerUrl
+            };
+          }
+        } catch (error) {
+          console.log(`⚠️ Flash loan failed, falling back to regular arbitrage:`, error.message);
+        }
+      }
+
       // Get current ticker for optimal timing
       const currentTicker = await this.exchange.fetchTicker(symbol);
       const optimalBuyPrice = currentTicker.ask; // Buy at ask
+      const expectedProfit = profitPct;
       const targetSellPrice = optimalBuyPrice * (1 + Math.max(0.002, expectedProfit / 100)); // Minimum 0.2% profit target
 
       console.log(`🎯 AI Target: Buy at ${optimalBuyPrice}, Sell target: ${targetSellPrice} (${((targetSellPrice - optimalBuyPrice) / optimalBuyPrice * 100).toFixed(3)}% profit)`);
@@ -1000,6 +1037,18 @@ class OKXService {
       stopLoss,
       takeProfit
     };
+  }
+
+  // Get Base network token address for flash loans
+  private getTokenAddress(symbol: string): string {
+    const baseTokens: { [key: string]: string } = {
+      'WETH': '0x4200000000000000000000000000000000000006',
+      'ETH': '0x4200000000000000000000000000000000000006',
+      'USDC': '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+      'DAI': '0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb'
+    };
+    
+    return baseTokens[symbol.toUpperCase()] || baseTokens['USDC'];
   }
 
   // Calculate optimal trade amount using AI and risk management with allocation rules

@@ -5,6 +5,7 @@ import { storage } from "./storage";
 import { db } from "./db";
 import { seedDatabase } from "./seed";
 import { okxService } from "./okx-service";
+import { flashLoanService } from './flashloan-service';
 import { arbitrageEngine, TRADING_STRATEGIES } from "./trading-strategies";
 import { getAllActiveDEXes, getDEXById } from "./dex-registry";
 import { riskManager } from "./risk-management";
@@ -33,7 +34,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Initialize OKX service
   await okxService.initialize();
-  
+
   // Initialize DCA automation engine
   await dcaEngine.initializeDCA();
 
@@ -261,12 +262,12 @@ async function scanArbitrageOpportunities(req: any, res: any) {
         const spotBalance = await okxService.getSpotWalletBalance();
         const tokenPair = formattedOpp.token_pair;
         const isValidForOKX = tokenPair && tokenPair.includes('/') && !tokenPair.includes('LP') && !tokenPair.includes('INVALID');
-        
+
         // Check if we have sufficient balance for this token pair
         const quoteCurrency = tokenPair.split('/')[1];
         const availableBalance = spotBalance[quoteCurrency] || 0;
         const minRequiredBalance = 10; // Minimum $10 equivalent
-        
+
         const hasBalance = availableBalance >= 1; // Lower threshold to $1
         const profitableEnough = formattedOpp.profit_percentage > 0.15; // Lower threshold to 0.15%
 
@@ -274,7 +275,7 @@ async function scanArbitrageOpportunities(req: any, res: any) {
           try {
             // AI decision with balance consideration
             const aiDecision = await makeAITradingDecision(formattedOpp, spotBalance);
-            
+
             console.log(`🎯 AUTO-EXECUTING valid OKX trade for ${formattedOpp.token_pair}: Balance ${availableBalance} ${quoteCurrency}, Profit ${formattedOpp.profit_percentage}%`);
 
             const optimalAmount = calculateOptimalTradeAmountWithBalance(formattedOpp, aiDecision, spotBalance);
@@ -815,7 +816,7 @@ async function makeAITradingDecision(opportunity: any, spotBalance?: { [currency
   if (spotBalance) {
     const quoteCurrency = opportunity.token_pair.split('/')[1];
     const availableBalance = spotBalance[quoteCurrency] || 0;
-    
+
     if (availableBalance > 100) balanceScore = 90;
     else if (availableBalance > 50) balanceScore = 80;
     else if (availableBalance > 20) balanceScore = 70;
@@ -956,7 +957,7 @@ function calculateOptimalTradeAmountWithBalance(opportunity: any, aiDecision: an
 
   // Get allocation rules for this token type
   const allocation = { maxUsable: availableBalance, recommended: availableBalance * 0.1 };
-  
+
   // More aggressive for small balances - scale up strategy
   const balanceMultiplier = availableBalance < 10 ? 0.15 : availableBalance < 50 ? 0.08 : 0.02;
   const maxTradeValue = allocation.maxUsable * balanceMultiplier; // Scale based on balance size
@@ -999,7 +1000,7 @@ function calculateOptimalTradeAmount(opportunity: any, aiDecision: any): number 
 function selectOptimalExecutionStrategy(opportunity: any, aiDecision: any): any {
   return {
     strategy: aiDecision.strategy,
-    slippageTolerance: opportunity.profit_percentage > 3 ? 3.0 : 1.5,
+    slippageTolerance: opportunity.profit_percentage > 3 ? 3.0 : opportunity.profit_percentage > 1.5 ? 1.5 : 0.8,
     speedPriority: aiDecision.executionPriority === 'HIGH' ? 'fast' : 'standard',
     orderType: opportunity.volume_available > 50 ? 'limit' : 'market',
     splitOrder: opportunity.volume_available > 100 ? true : false
@@ -1195,7 +1196,7 @@ async function getBackgroundStatus(req: any, res: any) {
 async function getDCAStatus(req: any, res: any) {
   try {
     const dcaSchedules = await dcaEngine.getDCAStatus();
-    
+
     const dcaMetrics = dcaSchedules.map(schedule => ({
       id: schedule.id,
       tokenPair: schedule.config.tokenPair,
@@ -1225,7 +1226,7 @@ async function getDCAStatus(req: any, res: any) {
 async function addDCASchedule(req: any, res: any, data: any) {
   try {
     const { tokenPair, intervalHours, amountPerPurchase, maxTotalInvestment } = data;
-    
+
     const dcaConfig = {
       tokenPair,
       intervalHours: intervalHours || 12,
@@ -1253,7 +1254,7 @@ async function addDCASchedule(req: any, res: any, data: any) {
 async function toggleDCA(req: any, res: any, data: any) {
   try {
     const { scheduleId, action } = data; // action: 'pause' or 'resume'
-    
+
     let success = false;
     if (action === 'pause') {
       success = await dcaEngine.pauseDCA(scheduleId);
@@ -1284,60 +1285,60 @@ async function getProfitMetrics(req: any, res: any) {
     const totalProfit = recentTrades.reduce((sum, trade) => 
       sum + parseFloat(trade.profitRealized || '0'), 0
     );
-    
+
     const totalVolume = recentTrades.reduce((sum, trade) => 
       sum + parseFloat(trade.amountTraded || '0'), 0
     );
-    
+
     const successfulTrades = recentTrades.filter(t => 
       t.status === 'confirmed' && parseFloat(t.profitRealized || '0') > 0
     ).length;
-    
+
     const totalTrades = recentTrades.length;
     const winRate = totalTrades > 0 ? (successfulTrades / totalTrades) * 100 : 0;
-    
+
     // Calculate profit by strategy
     const profitByStrategy = recentTrades.reduce((acc, trade) => {
       const strategy = trade.strategyId?.toString() || 'unknown';
       const profit = parseFloat(trade.profitRealized || '0');
-      
+
       if (!acc[strategy]) {
         acc[strategy] = { profit: 0, trades: 0, volume: 0 };
       }
-      
+
       acc[strategy].profit += profit;
       acc[strategy].trades += 1;
       acc[strategy].volume += parseFloat(trade.amountTraded || '0');
-      
+
       return acc;
     }, {} as { [key: string]: { profit: number; trades: number; volume: number } });
-    
+
     // Calculate daily profit trend
     const dailyProfits = [];
     for (let i = 6; i >= 0; i--) {
       const dayStart = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
       const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
-      
+
       const dayTrades = recentTrades.filter(trade => {
         const tradeDate = trade.createdAt ? new Date(trade.createdAt) : new Date();
         return tradeDate >= dayStart && tradeDate < dayEnd;
       });
-      
+
       const dayProfit = dayTrades.reduce((sum, trade) => 
         sum + parseFloat(trade.profitRealized || '0'), 0
       );
-      
+
       dailyProfits.push({
         date: dayStart.toISOString().split('T')[0],
         profit: dayProfit,
         trades: dayTrades.length
       });
     }
-    
+
     // Get DCA performance
     const dcaSchedules = await dcaEngine.getDCAStatus();
     const dcaTotalPnL = dcaSchedules.reduce((sum, s) => sum + s.unrealizedPnL, 0);
-    
+
     return res.json({
       success: true,
       profitMetrics: {
