@@ -180,13 +180,8 @@ class OKXService {
       return spotBalance;
     } catch (error) {
       console.error('Error fetching spot wallet balance:', error);
-      // Return mock balance for testing if API fails
-      return {
-        'USDT': 100,
-        'USDC': 50,
-        'BTC': 0.001,
-        'ETH': 0.05
-      };
+      console.log('❌ REAL BALANCE DATA UNAVAILABLE - Returning zero balances');
+      return {}; // Return empty object when real balance data is unavailable
     }
   }
 
@@ -360,11 +355,9 @@ class OKXService {
   }
 
   private generateSimulatedOpportunities(): any[] {
-    console.log('⚠️ FALLBACK: Generating simulated opportunities (NO REAL DATA AVAILABLE)');
-    return [
-      { id: 'sim_1', token_pair: 'BTC/USDT', buy_exchange: 'Simulated', sell_exchange: 'Simulated', buy_price: '30000', sell_price: '30100', profit_percentage: '0.33', profit_amount: '100', volume_available: '50', confidence: 70, timestamp: new Date().toISOString(), executable: false, execution_ready: false, data_source: 'SIMULATED' },
-      { id: 'sim_2', token_pair: 'ETH/USDT', buy_exchange: 'Simulated', sell_exchange: 'Simulated', buy_price: '2000', sell_price: '2015', profit_percentage: '0.75', profit_amount: '15', volume_available: '30', confidence: 85, timestamp: new Date().toISOString(), executable: false, execution_ready: false, data_source: 'SIMULATED' }
-    ];
+    console.log('❌ REAL DATA UNAVAILABLE - Returning empty opportunities');
+    console.log('⚠️ No trading opportunities when real market data is unavailable');
+    return []; // Return empty array when real data is unavailable
   }
 
   private async getTokenPricesAcrossExchanges(token: string): Promise<{ exchange: string; price: number }[]> {

@@ -347,53 +347,44 @@ class FlashLoanService {
         if (!this.contract) return false;
         
         try {
-
-
-    private generateSimulatedFlashLoanOpportunities(): FlashLoanOpportunity[] {
-        const opportunities: FlashLoanOpportunity[] = [];
-        
-        // Generate realistic simulated opportunities for testing
-        const scenarios = [
-            {
-                asset: '0x4200000000000000000000000000000000000006', // WETH
-                amount: 5,
-                dexA: 'Aerodrome',
-                dexB: 'Uniswap V3',
-                profitPercentage: 0.12
-            },
-            {
-                asset: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', // USDC
-                amount: 15000,
-                dexA: 'Uniswap V3',
-                dexB: 'Equalizer',
-                profitPercentage: 0.08
-            },
-            {
-                asset: '0x4200000000000000000000000000000000000006', // WETH
-                amount: 2,
-                dexA: 'Equalizer',
-                dexB: 'Aerodrome',
-                profitPercentage: 0.15
-            }
-        ];
-        
-        for (let i = 0; i < scenarios.length; i++) {
-            const scenario = scenarios[i];
-            const basePrice = scenario.asset === '0x4200000000000000000000000000000000000006' ? 2800 : 1;
+            // Convert opportunity to smart contract format
+            const tokenA = this.getTokenAddress(opportunity.token_pair.split('/')[0]);
+            const tokenB = this.getTokenAddress(opportunity.token_pair.split('/')[1]);
+            const amount = ethers.parseEther(opportunity.amount?.toString() || "1");
             
-            opportunities.push({
-                asset: scenario.asset,
-                amount: scenario.amount,
-                dexA: scenario.dexA,
-                dexB: scenario.dexB,
-                estimatedProfit: (scenario.amount * basePrice * scenario.profitPercentage) / 100,
-                profitPercentage: scenario.profitPercentage,
-                gasEstimate: 800000
-            });
+            const dexARouter = this.getDEXRouter(opportunity.buy_exchange);
+            const dexBRouter = this.getDEXRouter(opportunity.sell_exchange);
+            
+            const routeA = this.encodeRoute(opportunity.buy_exchange, [tokenA, tokenB]);
+            const routeB = this.encodeRoute(opportunity.sell_exchange, [tokenB, tokenA]);
+            
+            const [estimatedProfit, isProfitable] = await this.contract.calculatePotentialProfit(
+                tokenA,
+                tokenB,
+                amount,
+                dexARouter,
+                dexBRouter,
+                routeA,
+                routeB
+            );
+            
+            const profitETH = parseFloat(ethers.formatEther(estimatedProfit));
+            const profitPercentage = (profitETH / parseFloat(ethers.formatEther(amount))) * 100;
+            
+            console.log(`🔍 Smart contract validation: ${profitPercentage.toFixed(3)}% profit, isProfitable: ${isProfitable}`);
+            
+            return isProfitable && profitPercentage >= 0.05; // Minimum 0.05% profit
+            
+        } catch (error) {
+            console.error("Error validating arbitrage opportunity:", error);
+            return false;
         }
-        
-        console.log(`🎭 Generated ${opportunities.length} simulated flash loan opportunities`);
-        return opportunities;
+    }
+    
+    private generateSimulatedFlashLoanOpportunities(): FlashLoanOpportunity[] {
+        console.log('❌ FLASH LOAN DATA UNAVAILABLE - No contract deployed');
+        console.log('⚠️ Deploy smart contract with private key to enable flash loan opportunities');
+        return []; // Return empty array when contract is not deployed
     }
 
             // Convert opportunity to smart contract format

@@ -135,6 +135,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Add system status endpoint
+  app.get("/api/system-status", async (req, res) => {
+    const { okxService } = require('./okx-service');
+    const { flashLoanService } = require('./flashloan-service');
+
+    const okxStatus = okxService.getConnectionStatus();
+    const hasOKXKeys = !!(process.env.OKX_API_KEY && process.env.OKX_SECRET_KEY && process.env.OKX_PASSPHRASE);
+    const hasPrivateKey = !!(process.env.PRIVATE_KEY && process.env.PRIVATE_KEY !== '[REDACTED]');
+
+    const status = {
+      okx: {
+        connected: okxStatus.isConnected,
+        hasApiKeys: hasOKXKeys,
+        realDataAvailable: hasOKXKeys && okxStatus.isConnected,
+        tickerCount: okxStatus.tickerCount
+      },
+      flashLoan: {
+        initialized: flashLoanService.isInitialized,
+        contractDeployed: !!await flashLoanService.loadDeploymentInfo(),
+        hasPrivateKey: hasPrivateKey,
+        readyForDeployment: !hasPrivateKey
+      },
+      trading: {
+        realDataMode: hasOKXKeys && okxStatus.isConnected,
+        autoExecutionEnabled: hasOKXKeys && okxStatus.isConnected,
+        fallbackMode: !hasOKXKeys || !okxStatus.isConnected
+      },
+      nextSteps: []
+    };
+
+    if (!hasOKXKeys) {
+      status.nextSteps.push("Add OKX API keys to enable real market data");
+    }
+    if (!hasPrivateKey) {
+      status.nextSteps.push("Add PRIVATE_KEY to deploy flash loan contract");
+    }
+    if (hasPrivateKey && !status.flashLoan.contractDeployed) {
+      status.nextSteps.push("Deploy flash loan contract to Base network");
+    }
+
+    return res.json(status);
+  });
+
+
   const httpServer = createServer(app);
 
   // Setup WebSocket server for real-time updates
@@ -319,7 +363,7 @@ async function scanArbitrageOpportunities(req: any, res: any) {
                 opportunityId: dbRecord.id,
                 strategyId: aiDecision.strategyId,
                 transactionHash: executionResult.txHash || `trade_${Date.now()}`,
-                tokenPair: dbRecord.tokenPair,
+                tokenPair: dbdbRecord.tokenPair,
                 buyExchange: dbRecord.buyExchange,
                 sellExchange: dbRecord.sellExchange,
                 amountTraded: (executionResult.actualAmount || optimalAmount).toString(),
@@ -851,10 +895,10 @@ async function makeAITradingDecision(opportunity: any, spotBalance?: { [currency
 
   // AI confidence calculation with balance consideration
   const aiConfidence = (
-    profitScore * 0.4 + 
-    riskScore * 0.2 + 
-    volumeScore * 0.1 + 
-    timeScore * 0.1 + 
+    profitScore * 0.4 +
+    riskScore * 0.2 +
+    volumeScore * 0.1 +
+    timeScore * 0.1 +
     balanceScore * 0.2 // 20% weight on balance
   );
 
@@ -878,8 +922,8 @@ async function makeAITradingDecision(opportunity: any, spotBalance?: { [currency
 
   // More aggressive execution criteria for small balance scaling
   const shouldExecute = (
-    opportunity.profit_percentage > 0.15 && 
-    opportunity.risk_score <= 4 && 
+    opportunity.profit_percentage > 0.15 &&
+    opportunity.risk_score <= 4 &&
     aiConfidence >= executionThreshold &&
     balanceScore >= 30 // Lower balance requirement
   );
@@ -1307,15 +1351,15 @@ async function getProfitMetrics(req: any, res: any) {
       .orderBy(desc(executedTrades.createdAt));
 
     // Calculate comprehensive profit metrics
-    const totalProfit = recentTrades.reduce((sum, trade) => 
+    const totalProfit = recentTrades.reduce((sum, trade) =>
       sum + parseFloat(trade.profitRealized || '0'), 0
     );
 
-    const totalVolume = recentTrades.reduce((sum, trade) => 
+    const totalVolume = recentTrades.reduce((sum, trade) =>
       sum + parseFloat(trade.amountTraded || '0'), 0
     );
 
-    const successfulTrades = recentTrades.filter(t => 
+    const successfulTrades = recentTrades.filter(t =>
       t.status === 'confirmed' && parseFloat(t.profitRealized || '0') > 0
     ).length;
 
@@ -1349,7 +1393,7 @@ async function getProfitMetrics(req: any, res: any) {
         return tradeDate >= dayStart && tradeDate < dayEnd;
       });
 
-      const dayProfit = dayTrades.reduce((sum, trade) => 
+      const dayProfit = dayTrades.reduce((sum, trade) =>
         sum + parseFloat(trade.profitRealized || '0'), 0
       );
 
