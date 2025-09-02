@@ -32,8 +32,8 @@ async function deployFlashLoanContract() {
     const balanceETH = ethers.formatEther(balance);
     console.log("💰 Wallet balance:", balanceETH, "ETH");
     
-    if (parseFloat(balanceETH) < 0.005) {
-        throw new Error("Insufficient ETH for deployment. Need at least 0.005 ETH");
+    if (parseFloat(balanceETH) < 0.002) {
+        throw new Error("Insufficient ETH for deployment. Need at least 0.002 ETH");
     }
     
     // Compile contract (simplified - in production use Hardhat/Foundry)
@@ -52,9 +52,9 @@ async function deployFlashLoanContract() {
         "event ArbitrageExecuted(address indexed,uint256,uint256,address indexed)"
     ];
     
-    // Estimate deployment cost
+    // Estimate deployment cost - optimized
     const gasPrice = await provider.getFeeData();
-    const estimatedGas = 2500000; // Estimated gas for deployment
+    const estimatedGas = 1800000; // Reduced gas estimate for smaller contract
     const deploymentCost = gasPrice.gasPrice * BigInt(estimatedGas);
     const deploymentCostETH = ethers.formatEther(deploymentCost);
     

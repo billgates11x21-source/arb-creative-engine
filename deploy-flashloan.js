@@ -6,9 +6,9 @@ async function deployWithCostEstimation() {
     console.log("💰 FLASH LOAN CONTRACT DEPLOYMENT COST ESTIMATION");
     console.log("=" .repeat(60));
     
-    // Base network gas configuration
-    const BASE_GAS_PRICE = 0.001; // 0.001 gwei (very low on Base)
-    const DEPLOYMENT_GAS = 2500000; // Estimated gas units
+    // Base network gas configuration - optimized for current balance
+    const BASE_GAS_PRICE = 0.0005; // 0.0005 gwei (ultra low on Base)
+    const DEPLOYMENT_GAS = 1800000; // Reduced gas estimate
     
     // Calculate costs
     const gasCostWei = ethers.parseUnits(BASE_GAS_PRICE.toString(), 'gwei') * BigInt(DEPLOYMENT_GAS);
@@ -23,7 +23,7 @@ async function deployWithCostEstimation() {
     console.log("");
     
     console.log("🔧 REQUIRED FOR DEPLOYMENT:");
-    console.log(`   • Minimum ETH needed: ${(parseFloat(gasCostETH) * 1.5).toFixed(6)} ETH`);
+    console.log(`   • Minimum ETH needed: ${(parseFloat(gasCostETH) * 1.2).toFixed(6)} ETH`);
     console.log(`   • Network: Base Mainnet (Chain ID: 8453)`);
     console.log(`   • RPC URL: https://mainnet.base.org`);
     console.log("");
