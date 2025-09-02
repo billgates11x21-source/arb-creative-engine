@@ -41,7 +41,7 @@ export function MarketOverview({ stats }: MarketOverviewProps) {
           <div>
             <p className="text-sm text-muted-foreground mb-1">Today's Profit</p>
             <p className="text-3xl font-bold text-neon-green neon-text">
-              ${stats.profitToday.toLocaleString()}
+              ${stats.profitToday?.toLocaleString() || "0"}
             </p>
           </div>
           <div className="w-12 h-12 rounded-full bg-neon-green/20 flex items-center justify-center">
@@ -51,7 +51,7 @@ export function MarketOverview({ stats }: MarketOverviewProps) {
         <div className="mt-4 flex items-center gap-2">
           <TrendingUp className="w-4 h-4 text-neon-green" />
           <span className="text-sm text-neon-green">
-            {stats.avgProfitPercent.toFixed(1)}% avg profit
+            {(stats.avgProfitPercent || 0).toFixed(1)}% avg profit
           </span>
         </div>
       </Card>
@@ -82,7 +82,7 @@ export function MarketOverview({ stats }: MarketOverviewProps) {
               24H Trading Volume
             </h3>
             <p className="text-4xl font-bold text-neon-orange neon-text">
-              ${stats.totalVolume.toLocaleString()}
+              ${stats.totalVolume?.toLocaleString() || "0"}
             </p>
           </div>
           <div className="flex gap-4">

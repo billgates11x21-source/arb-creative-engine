@@ -107,7 +107,14 @@ export function useArbitrageEngine() {
 
       const data = result.data;
       setOpportunities(data.opportunities || []);
-      setTradingStats(data.stats || {});
+      setTradingStats(prev => ({
+        totalOpportunities: data.stats?.totalOpportunities ?? prev.totalOpportunities,
+        activeArbitrage: data.stats?.activeArbitrage ?? prev.activeArbitrage,
+        totalVolume: data.stats?.totalVolume ?? prev.totalVolume,
+        profitToday: data.stats?.profitToday ?? prev.profitToday,
+        successRate: data.stats?.successRate ?? prev.successRate,
+        avgProfitPercent: data.stats?.avgProfitPercent ?? prev.avgProfitPercent
+      }));
       setLastUpdate(new Date());
 
       // Log opportunities summary
@@ -126,7 +133,7 @@ export function useArbitrageEngine() {
       console.error('Error scanning opportunities:', error);
       toast({
         title: "Scan Error",
-        description: `Failed to scan opportunities: ${error.message}`,
+        description: `Failed to scan opportunities: ${(error as Error).message}`,
         variant: "destructive",
       });
     } finally {
@@ -449,16 +456,26 @@ export function useArbitrageEngine() {
     connectWebSocket();
 
     // Add global error handler for unhandled promise rejections
-    const handleGlobalError = (event: ErrorEvent) => {
-      console.error('Unhandled Promise Rejection:', event.message, event.reason);
+    const handleError = (event: ErrorEvent) => {
+      console.error('Global Error:', event.message);
       toast({
         title: "System Error",
-        description: `An unexpected error occurred: ${event.reason?.message || event.message}`,
+        description: `An unexpected error occurred: ${event.message}`,
         variant: "destructive",
       });
     };
-    window.addEventListener('error', handleGlobalError);
-    window.addEventListener('unhandledrejection', handleGlobalError);
+    
+    const handleRejection = (event: PromiseRejectionEvent) => {
+      console.error('Unhandled Promise Rejection:', event.reason);
+      toast({
+        title: "System Error",
+        description: `An unexpected error occurred: ${event.reason?.message || event.reason}`,
+        variant: "destructive",
+      });
+    };
+    
+    window.addEventListener('error', handleError);
+    window.addEventListener('unhandledrejection', handleRejection);
 
     return () => {
       if (ws) {
@@ -467,8 +484,8 @@ export function useArbitrageEngine() {
       if (reconnectTimeout) {
         clearTimeout(reconnectTimeout);
       }
-      window.removeEventListener('error', handleGlobalError);
-      window.removeEventListener('unhandledrejection', handleGlobalError);
+      window.removeEventListener('error', handleError);
+      window.removeEventListener('unhandledrejection', handleRejection);
     };
   }, [toast]); // Added toast to dependencies
 
