@@ -341,54 +341,77 @@ async function scanArbitrageOpportunities(req: any, res: any) {
         const profitableEnough = formattedOpp.profit_percentage > 0.15; // Lower threshold to 0.15%
 
         if (isValidForOKX && hasBalance && profitableEnough) {
-          try {
-            // AI decision with balance consideration
-            const aiDecision = await makeAITradingDecision(formattedOpp, spotBalance);
+          // AI decision with balance consideration
+          const aiDecision = await makeAITradingDecision(formattedOpp, spotBalance);
 
-            console.log(`🎯 AUTO-EXECUTING valid OKX trade for ${formattedOpp.token_pair}: Balance ${availableBalance} ${quoteCurrency}, Profit ${formattedOpp.profit_percentage}%`);
+          // Enhanced integration with comprehensive profit verification
+          if (isValid) {
+            console.log(`🎯 AUTO-EXECUTING valid trade for ${formattedOpp.token_pair}: Balance ${availableBalance} ${quoteCurrency}, Profit ${formattedOpp.profit_percentage}%`);
 
-            const optimalAmount = calculateOptimalTradeAmountWithBalance(formattedOpp, aiDecision, spotBalance);
+            // Import profit verification service
+            const { profitVerificationService } = require('./profit-verification');
+
+            // Get comprehensive pre-execution balance
+            const preExecutionBalance = await okxService.getSpotWalletBalance();
+            console.log(`💰 Pre-execution balance snapshot:`, preExecutionBalance);
+
+            const optimalAmount = calculateOptimalTradeAmountWithBalance(formattedOpp, aiDecision, preExecutionBalance);
             const executionStrategy = selectOptimalExecutionStrategy(formattedOpp, aiDecision);
 
-            // Force execute immediately for all profitable opportunities
+            // Execute trade with profit flow tracking
             const executionResult = await okxService.executeAIOptimizedTrade(dbRecord, optimalAmount, executionStrategy);
 
-            // Only record successful trades
+            // CRITICAL: Verify profit reaches OKX wallet
             if (executionResult.success) {
+              console.log(`📊 Verifying profit flow to OKX wallet...`);
+
+              const profitVerification = await profitVerificationService.verifyProfitFlow(
+                formattedOpp,
+                executionResult,
+                preExecutionBalance
+              );
+
+              console.log(`✅ Profit verification result:`, profitVerification);
+
+              // Update database with verification status
               await db.update(tradingOpportunities)
-                .set({ status: 'executing' })
+                .set({
+                  status: profitVerification.verified ? 'executing' : 'profit_verification_failed',
+                  notes: profitVerification.verified ? 'Profit verified in OKX wallet' : `Missing profits: ${JSON.stringify(profitVerification.missingProfits)}`
+                })
                 .where(eq(tradingOpportunities.id, dbRecord.id));
 
-              const trade = await db.insert(executedTrades).values({
-                opportunityId: dbRecord.id,
-                strategyId: aiDecision.strategyId,
-                transactionHash: executionResult.txHash || `trade_${Date.now()}`,
-                tokenPair: dbdbRecord.tokenPair,
-                buyExchange: dbRecord.buyExchange,
-                sellExchange: dbRecord.sellExchange,
-                amountTraded: (executionResult.actualAmount || optimalAmount).toString(),
-                profitRealized: Math.abs(executionResult.actualProfit || 0).toString(),
-                gasUsed: executionResult.gasUsed || 0,
-                gasPrice: (executionResult.gasPrice || 0).toString(),
-                executionTime: (executionResult.executionTime || 0).toString(),
-                status: 'confirmed'
-              }).returning();
+              // Only record as successful if profit is verified
+              if (profitVerification.verified) {
+                const trade = await db.insert(executedTrades).values({
+                  opportunityId: dbRecord.id,
+                  strategyId: aiDecision.strategyId,
+                  transactionHash: executionResult.txHash || `trade_${Date.now()}`,
+                  tokenPair: dbRecord.tokenPair,
+                  buyExchange: dbRecord.buyExchange,
+                  sellExchange: dbRecord.sellExchange,
+                  amountTraded: (executionResult.actualAmount || optimalAmount).toString(),
+                  profitRealized: Math.abs(profitVerification.profitReceived || 0).toString(),
+                  gasUsed: executionResult.gasUsed || 0,
+                  gasPrice: (executionResult.gasPrice || 0).toString(),
+                  executionTime: (executionResult.executionTime || 0).toString(),
+                  status: 'confirmed',
+                  notes: `Profit verified: +${profitVerification.profitReceived} in OKX wallet`
+                }).returning();
 
-              autoExecutedTrades.push(trade[0]);
-              formattedOpp.status = 'executing';
-
-              console.log(`✅ Successfully executed trade ${trade[0].id}: ${executionResult.actualProfit} profit`);
+                autoExecutedTrades.push(trade[0]);
+                console.log(`✅ Trade confirmed with verified profit: ${profitVerification.profitReceived}`);
+              } else {
+                console.error(`🚨 PROFIT VERIFICATION FAILED - Trade executed but profit not in OKX wallet`);
+                console.error(`🔧 Action required:`, profitVerification.actionRequired);
+              }
             } else {
               console.log(`❌ Trade execution failed: ${executionResult.error}`);
-              const currentDecision = await makeAITradingDecision(formattedOpp, spotBalance);
-            await logAIExecutionFailure(formattedOpp, currentDecision, { message: executionResult.error || 'Unknown error' });
             }
-            await updateAILearningData(aiDecision, executionResult, formattedOpp);
 
-          } catch (autoExecError) {
-            console.error(`❌ Auto-execution failed for ${formattedOpp.id}:`, autoExecError);
-            const currentDecision = await makeAITradingDecision(formattedOpp, spotBalance);
-            await logAIExecutionFailure(formattedOpp, currentDecision, autoExecError);
+            await updateAILearningData(aiDecision, executionResult, formattedOpp);
+          } else {
+            console.log(`⏭️ Skipping opportunity ${formattedOpp.id}: ${isValidForOKX ? 'Profit below threshold or invalid pair' : 'Invalid pair'}`);
           }
         } else {
           console.log(`⏭️ Skipping opportunity ${formattedOpp.id}: ${isValidForOKX ? 'Profit below threshold or invalid pair' : 'Invalid pair'}`);

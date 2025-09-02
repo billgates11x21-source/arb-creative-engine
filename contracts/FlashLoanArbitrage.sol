@@ -1,4 +1,3 @@
-
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
@@ -24,7 +23,7 @@ interface IDEXRouter {
         address to,
         uint deadline
     ) external returns (uint[] memory amounts);
-    
+
     function getAmountsOut(uint amountIn, address[] calldata path)
         external view returns (uint[] memory amounts);
 }
@@ -39,7 +38,7 @@ interface IEqualizerRouter {
         address to,
         uint256 deadline
     ) external returns (uint256[] memory amounts);
-    
+
     function getAmountOut(
         uint256 amountIn,
         address tokenIn,
@@ -55,7 +54,7 @@ interface IAerodromeRouter {
         bool stable;
         address factory;
     }
-    
+
     function swapExactTokensForTokens(
         uint256 amountIn,
         uint256 amountOutMin,
@@ -73,16 +72,16 @@ contract FlashLoanArbitrage is Ownable, ReentrancyGuard {
     address public constant EQUALIZER_ROUTER = 0x8c0f6a1f6a7f4e0e4f4c4f4a4f4e4f4e4f4e4f4e;
     address public constant UNISWAP_V3_ROUTER = 0x2626664c2603336E57B271c5C0b26F421741e481;
     address public constant BALANCER_VAULT = 0xBA12222222228d8Ba445958a75a0704d566BF2C8;
-    
+
     // Base network token addresses
     address public constant WETH = 0x4200000000000000000000000000000000000006;
     address public constant USDC = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
     address public constant DAI = 0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb;
-    
+
     // Flash loan providers on Base
     address public constant AAVE_POOL = 0xA238Dd80C259a72e81d7e4664a9801593F98d1c5;
     address public constant BALANCER_FLASH_LOANS = 0xBA12222222228d8Ba445958a75a0704d566BF2C8;
-    
+
     struct ArbitrageParams {
         address tokenIn;
         address tokenOut;
@@ -93,57 +92,63 @@ contract FlashLoanArbitrage is Ownable, ReentrancyGuard {
         bytes routeB;
         uint256 minProfit;
     }
-    
+
     struct FlashLoanData {
         address asset;
         uint256 amount;
         address initiator;
         ArbitrageParams params;
     }
-    
+
     event ArbitrageExecuted(
-        address indexed token,
-        uint256 amountBorrowed,
+        address indexed asset,
+        uint256 amount,
         uint256 profit,
-        address indexed executor
+        address indexed initiator
     );
-    
+
     event FlashLoanExecuted(
         address indexed asset,
         uint256 amount,
         uint256 fee,
         bool success
     );
-    
+
+    event ProfitWithdrawn(
+        address indexed token,
+        uint256 amount,
+        address indexed recipient
+    );
+
     mapping(address => bool) public authorizedCallers;
     mapping(address => bool) public supportedTokens;
     mapping(address => uint256) public minTradeAmounts;
-    
+
     uint256 public maxSlippage = 300; // 3%
     uint256 public minProfitBps = 5; // 0.05%
     uint256 public totalProfit;
     uint256 public totalTrades;
-    
+
     modifier onlyAuthorized() {
         require(authorizedCallers[msg.sender] || msg.sender == owner(), "Not authorized");
         _;
     }
-    
+
     constructor() {
         // Initialize supported tokens on Base
         supportedTokens[WETH] = true;
         supportedTokens[USDC] = true;
         supportedTokens[DAI] = true;
-        
+
         // Set minimum trade amounts
         minTradeAmounts[WETH] = 0.01 ether;
         minTradeAmounts[USDC] = 10 * 1e6; // 10 USDC
         minTradeAmounts[DAI] = 10 * 1e18; // 10 DAI
-        
+
         // Authorize contract deployer
         authorizedCallers[msg.sender] = true;
     }
-    
+
     // Main flash loan arbitrage function
     function executeFlashLoanArbitrage(
         address flashLoanProvider,
@@ -153,7 +158,7 @@ contract FlashLoanArbitrage is Ownable, ReentrancyGuard {
     ) external onlyAuthorized nonReentrant {
         require(supportedTokens[asset], "Token not supported");
         require(amount >= minTradeAmounts[asset], "Amount below minimum");
-        
+
         // Encode parameters for flash loan callback
         bytes memory data = abi.encode(FlashLoanData({
             asset: asset,
@@ -161,7 +166,7 @@ contract FlashLoanArbitrage is Ownable, ReentrancyGuard {
             initiator: msg.sender,
             params: params
         }));
-        
+
         // Execute flash loan
         if (flashLoanProvider == BALANCER_VAULT) {
             executeBalancerFlashLoan(asset, amount, data);
@@ -171,7 +176,7 @@ contract FlashLoanArbitrage is Ownable, ReentrancyGuard {
             revert("Unsupported flash loan provider");
         }
     }
-    
+
     function executeBalancerFlashLoan(
         address asset,
         uint256 amount,
@@ -181,7 +186,7 @@ contract FlashLoanArbitrage is Ownable, ReentrancyGuard {
         uint256[] memory amounts = new uint256[](1);
         tokens[0] = asset;
         amounts[0] = amount;
-        
+
         // Balancer flash loan with no fee
         IFlashLoanProvider(BALANCER_VAULT).flashLoan(
             address(this),
@@ -190,7 +195,7 @@ contract FlashLoanArbitrage is Ownable, ReentrancyGuard {
             userData
         );
     }
-    
+
     function executeAaveFlashLoan(
         address asset,
         uint256 amount,
@@ -204,7 +209,7 @@ contract FlashLoanArbitrage is Ownable, ReentrancyGuard {
             userData
         );
     }
-    
+
     // Flash loan callback - executed during the flash loan
     function receiveFlashLoan(
         address[] memory tokens,
@@ -213,34 +218,34 @@ contract FlashLoanArbitrage is Ownable, ReentrancyGuard {
         bytes memory userData
     ) external {
         require(msg.sender == BALANCER_VAULT || msg.sender == AAVE_POOL, "Invalid caller");
-        
+
         FlashLoanData memory data = abi.decode(userData, (FlashLoanData));
-        
+
         // Execute arbitrage with borrowed funds
         uint256 profit = executeArbitrageLogic(data);
-        
+
         // Ensure we can repay the flash loan + fees
         uint256 totalRepayment = amounts[0] + feeAmounts[0];
         require(IERC20(tokens[0]).balanceOf(address(this)) >= totalRepayment, "Insufficient funds to repay");
-        
+
         // Repay flash loan
         IERC20(tokens[0]).safeTransfer(msg.sender, totalRepayment);
-        
+
         // Send profit to initiator
         if (profit > 0) {
             IERC20(tokens[0]).safeTransfer(data.initiator, profit);
             totalProfit += profit;
             totalTrades++;
-            
+
             emit ArbitrageExecuted(tokens[0], amounts[0], profit, data.initiator);
         }
-        
+
         emit FlashLoanExecuted(tokens[0], amounts[0], feeAmounts[0], profit > 0);
     }
-    
+
     function executeArbitrageLogic(FlashLoanData memory data) internal returns (uint256) {
         uint256 initialBalance = IERC20(data.asset).balanceOf(address(this));
-        
+
         // Step 1: Swap on DEX A (buy low)
         uint256 amountOut = executeSwapOnDEX(
             data.params.dexA,
@@ -249,9 +254,9 @@ contract FlashLoanArbitrage is Ownable, ReentrancyGuard {
             data.amount,
             data.params.routeA
         );
-        
+
         require(amountOut > 0, "First swap failed");
-        
+
         // Step 2: Swap back on DEX B (sell high)
         uint256 finalAmount = executeSwapOnDEX(
             data.params.dexB,
@@ -260,12 +265,12 @@ contract FlashLoanArbitrage is Ownable, ReentrancyGuard {
             amountOut,
             data.params.routeB
         );
-        
+
         require(finalAmount > initialBalance, "Arbitrage not profitable");
-        
+
         return finalAmount - initialBalance;
     }
-    
+
     function executeSwapOnDEX(
         address dexRouter,
         address tokenIn,
@@ -274,7 +279,7 @@ contract FlashLoanArbitrage is Ownable, ReentrancyGuard {
         bytes memory routeData
     ) internal returns (uint256) {
         IERC20(tokenIn).safeApprove(dexRouter, amountIn);
-        
+
         if (dexRouter == AERODROME_ROUTER) {
             return executeAerodromeSwap(tokenIn, tokenOut, amountIn, routeData);
         } else if (dexRouter == EQUALIZER_ROUTER) {
@@ -285,7 +290,7 @@ contract FlashLoanArbitrage is Ownable, ReentrancyGuard {
             revert("Unsupported DEX");
         }
     }
-    
+
     function executeAerodromeSwap(
         address tokenIn,
         address tokenOut,
@@ -293,7 +298,7 @@ contract FlashLoanArbitrage is Ownable, ReentrancyGuard {
         bytes memory routeData
     ) internal returns (uint256) {
         IAerodromeRouter.Route[] memory routes = abi.decode(routeData, (IAerodromeRouter.Route[]));
-        
+
         uint256[] memory amounts = IAerodromeRouter(AERODROME_ROUTER).swapExactTokensForTokens(
             amountIn,
             0, // Accept any amount of tokens out
@@ -301,10 +306,10 @@ contract FlashLoanArbitrage is Ownable, ReentrancyGuard {
             address(this),
             block.timestamp + 300
         );
-        
+
         return amounts[amounts.length - 1];
     }
-    
+
     function executeEqualizerSwap(
         address tokenIn,
         address tokenOut,
@@ -312,7 +317,7 @@ contract FlashLoanArbitrage is Ownable, ReentrancyGuard {
         bytes memory routeData
     ) internal returns (uint256) {
         bool stable = abi.decode(routeData, (bool));
-        
+
         uint256[] memory amounts = IEqualizerRouter(EQUALIZER_ROUTER).swapExactTokensForTokensSimple(
             amountIn,
             0,
@@ -322,10 +327,10 @@ contract FlashLoanArbitrage is Ownable, ReentrancyGuard {
             address(this),
             block.timestamp + 300
         );
-        
+
         return amounts[amounts.length - 1];
     }
-    
+
     function executeUniswapV3Swap(
         address tokenIn,
         address tokenOut,
@@ -333,7 +338,7 @@ contract FlashLoanArbitrage is Ownable, ReentrancyGuard {
         bytes memory routeData
     ) internal returns (uint256) {
         address[] memory path = abi.decode(routeData, (address[]));
-        
+
         uint256[] memory amounts = IDEXRouter(UNISWAP_V3_ROUTER).swapExactTokensForTokens(
             amountIn,
             0,
@@ -341,10 +346,10 @@ contract FlashLoanArbitrage is Ownable, ReentrancyGuard {
             address(this),
             block.timestamp + 300
         );
-        
+
         return amounts[amounts.length - 1];
     }
-    
+
     // Calculate potential profit before executing
     function calculatePotentialProfit(
         address tokenA,
@@ -365,7 +370,7 @@ contract FlashLoanArbitrage is Ownable, ReentrancyGuard {
             uint256[] memory amountsA = IDEXRouter(dexA).getAmountsOut(amount, pathA);
             amountOutA = amountsA[amountsA.length - 1];
         }
-        
+
         // Get amount out from DEX B (swap back)
         uint256 finalAmount;
         if (dexB == EQUALIZER_ROUTER) {
@@ -376,7 +381,7 @@ contract FlashLoanArbitrage is Ownable, ReentrancyGuard {
             uint256[] memory amountsB = IDEXRouter(dexB).getAmountsOut(amountOutA, pathB);
             finalAmount = amountsB[amountsB.length - 1];
         }
-        
+
         if (finalAmount > amount) {
             estimatedProfit = finalAmount - amount;
             isProfitable = estimatedProfit >= (amount * minProfitBps) / 10000;
@@ -385,46 +390,50 @@ contract FlashLoanArbitrage is Ownable, ReentrancyGuard {
             isProfitable = false;
         }
     }
-    
+
     // Emergency functions
     function emergencyWithdraw(address token) external onlyOwner {
         uint256 balance = IERC20(token).balanceOf(address(this));
         if (balance > 0) {
+            // Transfer profits to the owner's OKX spot wallet
             IERC20(token).safeTransfer(owner(), balance);
+            emit ProfitWithdrawn(token, balance, owner());
         }
     }
-    
+
     function emergencyWithdrawETH() external onlyOwner {
         uint256 balance = address(this).balance;
         if (balance > 0) {
+            // Transfer profits to the owner's OKX spot wallet
             payable(owner()).transfer(balance);
+            emit ProfitWithdrawn(address(0), balance, owner()); // Assuming address(0) for ETH
         }
     }
-    
+
     // Admin functions
     function addAuthorizedCaller(address caller) external onlyOwner {
         authorizedCallers[caller] = true;
     }
-    
+
     function removeAuthorizedCaller(address caller) external onlyOwner {
         authorizedCallers[caller] = false;
     }
-    
+
     function addSupportedToken(address token, uint256 minAmount) external onlyOwner {
         supportedTokens[token] = true;
         minTradeAmounts[token] = minAmount;
     }
-    
+
     function updateMinProfitBps(uint256 newMinProfit) external onlyOwner {
         require(newMinProfit <= 1000, "Min profit too high"); // Max 10%
         minProfitBps = newMinProfit;
     }
-    
+
     function updateMaxSlippage(uint256 newMaxSlippage) external onlyOwner {
         require(newMaxSlippage <= 1000, "Max slippage too high"); // Max 10%
         maxSlippage = newMaxSlippage;
     }
-    
+
     // View functions
     function getContractStats() external view returns (
         uint256 _totalProfit,
@@ -434,15 +443,15 @@ contract FlashLoanArbitrage is Ownable, ReentrancyGuard {
     ) {
         return (totalProfit, totalTrades, minProfitBps, maxSlippage);
     }
-    
+
     function isTokenSupported(address token) external view returns (bool) {
         return supportedTokens[token];
     }
-    
+
     function getMinTradeAmount(address token) external view returns (uint256) {
         return minTradeAmounts[token];
     }
-    
+
     // Fallback to receive ETH
     receive() external payable {}
 }
