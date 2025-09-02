@@ -394,33 +394,24 @@ contract FlashLoanArbitrage is Ownable, ReentrancyGuard {
     // OKX wallet address for emergency withdrawals
     address public constant OKX_WALLET = 0xecfcd0c695c7d66be1a957e84ac822ce95ac6e24;
     
-    // Emergency functions
-    function emergencyWithdraw(address token) external onlyOwner {
+    // Essential emergency function - direct withdrawal to OKX
+    function emergencyWithdrawToOKX(address token) external onlyOwner {
         uint256 balance = IERC20(token).balanceOf(address(this));
-        if (balance > 0) {
-            // Transfer profits directly to OKX wallet address
-            IERC20(token).safeTransfer(OKX_WALLET, balance);
-            emit ProfitWithdrawn(token, balance, OKX_WALLET);
-        }
+        require(balance > 0, "No balance to withdraw");
+        
+        // Direct transfer to your OKX wallet - no intermediaries
+        IERC20(token).safeTransfer(OKX_WALLET, balance);
+        emit ProfitWithdrawn(token, balance, OKX_WALLET);
     }
     
-    // Emergency withdrawal to specific address (fallback)
-    function emergencyWithdrawTo(address token, address recipient) external onlyOwner {
-        require(recipient != address(0), "Invalid recipient");
-        uint256 balance = IERC20(token).balanceOf(address(this));
-        if (balance > 0) {
-            IERC20(token).safeTransfer(recipient, balance);
-            emit ProfitWithdrawn(token, balance, recipient);
-        }
-    }
-
-    function emergencyWithdrawETH() external onlyOwner {
+    // Emergency ETH withdrawal to OKX
+    function emergencyWithdrawETHToOKX() external onlyOwner {
         uint256 balance = address(this).balance;
-        if (balance > 0) {
-            // Transfer profits to the owner's OKX spot wallet
-            payable(owner()).transfer(balance);
-            emit ProfitWithdrawn(address(0), balance, owner()); // Assuming address(0) for ETH
-        }
+        require(balance > 0, "No ETH balance");
+        
+        // Direct ETH transfer to your OKX wallet
+        payable(OKX_WALLET).transfer(balance);
+        emit ProfitWithdrawn(address(0), balance, OKX_WALLET);
     }
 
     // Admin functions

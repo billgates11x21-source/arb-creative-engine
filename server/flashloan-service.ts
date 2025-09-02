@@ -513,6 +513,53 @@ class FlashLoanService {
         }
     }
 
+    // ESSENTIAL: Direct emergency withdrawal to OKX wallet
+    async emergencyWithdrawToOKX(tokenAddress?: string): Promise<{success: boolean, txHash?: string, error?: string}> {
+        try {
+            if (!this.contract || !this.config) {
+                throw new Error("Flash loan service not initialized");
+            }
+
+            console.log("🚨 EXECUTING EMERGENCY WITHDRAWAL TO OKX WALLET");
+            console.log(`📍 OKX Address: 0xecfcd0c695c7d66be1a957e84ac822ce95ac6e24`);
+
+            let tx;
+            if (tokenAddress && tokenAddress !== '0x0000000000000000000000000000000000000000') {
+                // Withdraw specific token
+                console.log(`💰 Withdrawing ${tokenAddress} tokens...`);
+                tx = await this.contract.emergencyWithdrawToOKX(tokenAddress, {
+                    gasLimit: 100000,
+                    gasPrice: ethers.parseUnits('0.001', 'gwei')
+                });
+            } else {
+                // Withdraw ETH
+                console.log(`💰 Withdrawing ETH...`);
+                tx = await this.contract.emergencyWithdrawETHToOKX({
+                    gasLimit: 50000,
+                    gasPrice: ethers.parseUnits('0.001', 'gwei')
+                });
+            }
+
+            console.log("📝 Emergency withdrawal transaction:", tx.hash);
+            await tx.wait();
+
+            console.log("✅ EMERGENCY WITHDRAWAL COMPLETED TO OKX WALLET");
+            console.log(`🔍 View on BaseScan: https://basescan.org/tx/${tx.hash}`);
+
+            return {
+                success: true,
+                txHash: tx.hash
+            };
+
+        } catch (error) {
+            console.error("❌ Emergency withdrawal failed:", error);
+            return {
+                success: false,
+                error: error.message
+            };
+        }
+    }
+
     // Log profit withdrawal failures for manual intervention
     private async logProfitWithdrawalFailure(txHash: string, profit: number, error: string): Promise<void> {
         const logEntry = {
@@ -520,13 +567,12 @@ class FlashLoanService {
             txHash,
             profit,
             error,
-            status: 'manual_intervention_required'
+            status: 'emergency_withdrawal_available',
+            action: 'Call emergencyWithdrawToOKX() to recover funds'
         };
 
-        console.error("🚨 PROFIT WITHDRAWAL FAILURE LOGGED:", logEntry);
-        
-        // Store in database or external monitoring system
-        // This ensures no profits are lost
+        console.error("🚨 PROFIT WITHDRAWAL FAILURE - EMERGENCY BACKUP AVAILABLE:", logEntry);
+        console.error("🔧 Recovery: Use emergencyWithdrawToOKX() function");
     }
 
     async integrateWithOKXTrading(): Promise<void> {
