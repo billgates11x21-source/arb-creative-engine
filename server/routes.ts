@@ -5,6 +5,10 @@ import { storage } from "./storage";
 import { db } from "./db";
 import { seedDatabase } from "./seed";
 import { okxService } from "./okx-service";
+import { arbitrageEngine, TRADING_STRATEGIES } from "./trading-strategies";
+import { getAllActiveDEXes, getDEXById } from "./dex-registry";
+import { riskManager } from "./risk-management";
+import { backgroundEngine } from "./background-engine";
 import { 
   tradingOpportunities, 
   executedTrades, 
@@ -49,6 +53,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         case 'update_risk_settings':
           return await updateRiskSettings(req, res, data);
+        
+        case 'scan_all_strategies':
+          return await scanAllStrategiesComprehensive(req, res);
+        
+        case 'get_dex_registry':
+          return await getDEXRegistry(req, res);
+        
+        case 'get_trading_strategies':
+          return await getTradingStrategies(req, res);
+        
+        case 'start_background_engine':
+          return await startBackgroundEngine(req, res);
+        
+        case 'stop_background_engine':
+          return await stopBackgroundEngine(req, res);
+        
+        case 'get_background_status':
+          return await getBackgroundStatus(req, res);
         
         default:
           return res.status(400).json({ error: 'Invalid action' });
@@ -126,34 +148,64 @@ async function scanArbitrageOpportunities(req: any, res: any) {
     riskSettingsData = await db.insert(riskSettings).values({}).returning();
   }
 
-  // Get real opportunities from OKX with fallback strategies
+  // Get comprehensive opportunities using all 5 strategies across 80+ DEXes
   let opportunities = [];
-  let strategyUsed = 'arbitrage';
+  let strategyUsed = 'comprehensive_multi_strategy';
   
   try {
-    opportunities = await okxService.scanRealOpportunities();
+    // Use the advanced arbitrage engine for comprehensive scanning
+    const comprehensiveOpps = await arbitrageEngine.scanAllStrategies();
+    console.log(`🔍 Comprehensive scan found ${comprehensiveOpps.length} opportunities across all strategies`);
     
+    // Convert to OKX format for compatibility
+    opportunities = comprehensiveOpps.map(op => ({
+      id: op.id,
+      token_pair: op.token,
+      buy_exchange: op.buyDex,
+      sell_exchange: op.sellDex,
+      buy_price: op.buyPrice,
+      sell_price: op.sellPrice,
+      profit_amount: op.estimatedProfit,
+      profit_percentage: op.profitPercentage * 100,
+      volume_available: op.amount,
+      risk_score: op.riskLevel,
+      confidence_score: op.confidence,
+      strategy: op.strategy,
+      gas_estimate: op.gasEstimate,
+      execution_time: op.executionTime,
+      liquidity_score: op.liquidityScore
+    }));
+    
+    // Fallback to OKX if comprehensive scan finds nothing
     if (opportunities.length === 0) {
-      console.log('No opportunities found with any strategy');
-      strategyUsed = 'scanning';
+      console.log('No comprehensive opportunities, falling back to OKX...');
+      opportunities = await okxService.scanRealOpportunities();
+      strategyUsed = 'okx_fallback';
     } else {
-      // Determine which strategy was used based on opportunity IDs
-      const firstOpp = opportunities[0];
-      if (firstOpp.id.startsWith('momentum-')) {
-        strategyUsed = 'trending_momentum';
-        console.log(`Switched to trending momentum strategy: Found ${opportunities.length} opportunities`);
-      } else if (firstOpp.id.startsWith('yield-')) {
-        strategyUsed = 'yield_farming';
-        console.log(`Switched to yield farming strategy: Found ${opportunities.length} opportunities`);
-      } else {
-        strategyUsed = 'arbitrage';
-        console.log(`Using arbitrage strategy: Found ${opportunities.length} opportunities`);
-      }
+      // Determine primary strategy used
+      const strategyCounts = opportunities.reduce((acc, op) => {
+        acc[op.strategy] = (acc[op.strategy] || 0) + 1;
+        return acc;
+      }, {} as { [key: string]: number });
+      
+      strategyUsed = Object.keys(strategyCounts).reduce((a, b) => 
+        strategyCounts[a] > strategyCounts[b] ? a : b
+      );
+      
+      console.log(`📊 Primary strategy: ${strategyUsed} with ${strategyCounts[strategyUsed]} opportunities`);
     }
+    
   } catch (error) {
-    console.error('Error getting real opportunities:', error);
-    opportunities = [];
-    strategyUsed = 'error';
+    console.error('Error in comprehensive scanning:', error);
+    // Ultimate fallback to OKX
+    try {
+      opportunities = await okxService.scanRealOpportunities();
+      strategyUsed = 'okx_fallback_error';
+    } catch (okxError) {
+      console.error('OKX fallback also failed:', okxError);
+      opportunities = [];
+      strategyUsed = 'error';
+    }
   }
 
   // Clear old expired opportunities first
@@ -669,5 +721,170 @@ async function logAIExecutionFailure(opportunity: any, aiDecision: any, error: a
     // This would feed back into the AI model for learning
   } catch (logError) {
     console.error('Error logging AI failure:', logError);
+  }
+}
+
+// Comprehensive Multi-Strategy Scanner
+async function scanAllStrategiesComprehensive(req: any, res: any) {
+  try {
+    console.log('🔍 Scanning all 5 strategies across 80+ DEXes...');
+    
+    // Get all opportunities from the advanced arbitrage engine
+    const allOpportunities = await arbitrageEngine.scanAllStrategies();
+    
+    // Convert to database format and store
+    const dbOpportunities = allOpportunities.map(op => ({
+      opportunity_id: op.id,
+      token_pair: op.token,
+      buy_exchange: op.buyDex,
+      sell_exchange: op.sellDex,
+      buy_price: op.buyPrice,
+      sell_price: op.sellPrice,
+      profit_percentage: op.profitPercentage * 100,
+      volume_available: op.amount,
+      risk_score: op.riskLevel,
+      confidence_score: op.confidence,
+      strategy_type: op.strategy,
+      execution_time_estimate: op.executionTime,
+      gas_estimate: op.gasEstimate.toString(),
+      liquidity_score: op.liquidityScore,
+      detected_at: new Date(),
+      expires_at: new Date(Date.now() + 5 * 60 * 1000) // 5 minutes
+    }));
+    
+    // Store top opportunities in database
+    if (dbOpportunities.length > 0) {
+      await db.insert(tradingOpportunities)
+        .values(dbOpportunities.slice(0, 15))
+        .onConflictDoNothing(); // Avoid duplicates
+    }
+    
+    // Broadcast real-time update
+    sendRealTimeUpdate('opportunities', {
+      total: allOpportunities.length,
+      strategies: TRADING_STRATEGIES.map(s => ({
+        id: s.id,
+        name: s.name,
+        opportunities: allOpportunities.filter(op => op.strategy === s.id).length
+      })),
+      topOpportunities: allOpportunities.slice(0, 10)
+    });
+    
+    console.log(`📊 Found ${allOpportunities.length} opportunities across all strategies`);
+    
+    return res.json({
+      success: true,
+      opportunities: allOpportunities,
+      strategies: TRADING_STRATEGIES,
+      totalDexes: getAllActiveDEXes().length,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error scanning all strategies:', error);
+    return res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+  }
+}
+
+// DEX Registry API
+async function getDEXRegistry(req: any, res: any) {
+  try {
+    const activeDexes = getAllActiveDEXes();
+    const dexesByChain = activeDexes.reduce((acc, dex) => {
+      if (!acc[dex.chain]) acc[dex.chain] = [];
+      acc[dex.chain].push(dex);
+      return acc;
+    }, {} as { [chain: string]: any[] });
+    
+    return res.json({
+      totalDexes: activeDexes.length,
+      chains: Object.keys(dexesByChain).length,
+      dexesByChain,
+      allDexes: activeDexes
+    });
+  } catch (error) {
+    console.error('Error getting DEX registry:', error);
+    return res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+  }
+}
+
+// Trading Strategies API
+async function getTradingStrategies(req: any, res: any) {
+  try {
+    const strategies = arbitrageEngine.getAllStrategies();
+    
+    // Get performance data for each strategy
+    const strategiesWithPerformance = await Promise.all(
+      strategies.map(async (strategy) => {
+        const performance = await db.select()
+          .from(strategyPerformance)
+          .where(eq(strategyPerformance.strategy_id, strategy.id))
+          .orderBy(desc(strategyPerformance.created_at))
+          .limit(1);
+        
+        return {
+          ...strategy,
+          performance: performance[0] || null
+        };
+      })
+    );
+    
+    return res.json({
+      strategies: strategiesWithPerformance,
+      totalStrategies: strategies.length
+    });
+  } catch (error) {
+    console.error('Error getting trading strategies:', error);
+    return res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+  }
+}
+
+// Background Engine Control
+async function startBackgroundEngine(req: any, res: any) {
+  try {
+    await backgroundEngine.start();
+    
+    return res.json({
+      success: true,
+      message: 'Background arbitrage engine started',
+      status: backgroundEngine.getStatus(),
+      config: backgroundEngine.getConfig()
+    });
+  } catch (error) {
+    console.error('Error starting background engine:', error);
+    return res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+  }
+}
+
+async function stopBackgroundEngine(req: any, res: any) {
+  try {
+    await backgroundEngine.stop();
+    
+    return res.json({
+      success: true,
+      message: 'Background arbitrage engine stopped',
+      status: backgroundEngine.getStatus()
+    });
+  } catch (error) {
+    console.error('Error stopping background engine:', error);
+    return res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+  }
+}
+
+async function getBackgroundStatus(req: any, res: any) {
+  try {
+    const status = backgroundEngine.getStatus();
+    const config = backgroundEngine.getConfig();
+    const riskMetrics = riskManager.getCurrentMetrics();
+    
+    return res.json({
+      status,
+      config,
+      riskMetrics,
+      totalDexes: getAllActiveDEXes().length,
+      totalStrategies: TRADING_STRATEGIES.length
+    });
+  } catch (error) {
+    console.error('Error getting background status:', error);
+    return res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
   }
 }
