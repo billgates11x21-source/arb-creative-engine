@@ -29,22 +29,20 @@ interface RiskSettings {
   emergencyStopThreshold: number;
   btcEthAllocation: number;
   altAllocation: number;
-  isSimulationMode: boolean;
 }
 
 export function RiskManagementPanel() {
   const { toast } = useToast();
   
   const [riskSettings, setRiskSettings] = useState<RiskSettings>({
-    maxPositionSize: 10.0,
-    maxDailyTrades: 100,
-    maxDailyLoss: 50.0,
-    minProfitThreshold: 0.5,
-    maxSlippage: 2.0,
-    emergencyStopThreshold: 10.0,
+    maxPositionSize: 1.0,
+    maxDailyTrades: 50,
+    maxDailyLoss: 10.0,
+    minProfitThreshold: 0.3,
+    maxSlippage: 1.5,
+    emergencyStopThreshold: 5.0,
     btcEthAllocation: 80.0,
-    altAllocation: 20.0,
-    isSimulationMode: true
+    altAllocation: 20.0
   });
 
   const [isLoading, setIsLoading] = useState(false);

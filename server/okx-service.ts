@@ -511,13 +511,19 @@ class OKXService {
         throw new Error(`Insufficient balance for trade: have ${quoteBalance} ${quoteCurrency}, need ${minTradeValue * 1.1}`);
       }
 
-      // Calculate safe trade amount
-      const maxAmount = Math.min(opportunity.volume_available * 0.5, 50);
-      const tradeAmount = Math.max(maxAmount, 1.0); // Larger minimum for significant profits
+      // Calculate safe trade amount - fix NaN issue
+      const volumeAvailable = parseFloat(opportunity.volume_available) || 100;
+      const maxAmount = Math.min(volumeAvailable * 0.01, 10); // Much smaller for safety
+      const tradeAmount = Math.max(maxAmount, minAmount); // Use exchange minimum
+      
+      // Validate calculated amounts
+      if (isNaN(tradeAmount) || tradeAmount <= 0) {
+        throw new Error(`Invalid calculated trade amount: ${tradeAmount}`);
+      }
       
       // Ensure trade value meets minimum requirements
       const tradeValue = tradeAmount * currentPrice;
-      if (tradeValue < minCost) {
+      if (isNaN(tradeValue) || tradeValue < minCost) {
         throw new Error(`Trade value ${tradeValue} below minimum ${minCost}`);
       }
 

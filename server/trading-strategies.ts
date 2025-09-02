@@ -129,7 +129,7 @@ export class ArbitrageEngine {
     const tokens = ['BTC', 'ETH', 'USDT', 'USDC', 'LINK', 'UNI', 'AVAX', 'MATIC'];
 
     for (const token of tokens) {
-      const supportingDexes = this.activeDexes.filter(dex => 
+      const supportingDexes = this.activeDexes.filter(dex =>
         dex.supportedTokens.includes(token)
       );
 
@@ -188,8 +188,8 @@ export class ArbitrageEngine {
 
     for (const dex of this.activeDexes) {
       for (const [tokenA, tokenB, tokenC] of triangularPairs) {
-        if (dex.supportedTokens.includes(tokenA) && 
-            dex.supportedTokens.includes(tokenB) && 
+        if (dex.supportedTokens.includes(tokenA) &&
+            dex.supportedTokens.includes(tokenB) &&
             dex.supportedTokens.includes(tokenC)) {
 
           // Calculate triangular arbitrage
@@ -293,10 +293,10 @@ export class ArbitrageEngine {
           const sourceChain = chains[i];
           const targetChain = chains[j];
 
-          const sourceDexes = getDEXesByChain(sourceChain).filter(dex => 
+          const sourceDexes = getDEXesByChain(sourceChain).filter(dex =>
             dex.supportedTokens.includes(token)
           );
-          const targetDexes = getDEXesByChain(targetChain).filter(dex => 
+          const targetDexes = getDEXesByChain(targetChain).filter(dex =>
             dex.supportedTokens.includes(token)
           );
 
@@ -348,7 +348,7 @@ export class ArbitrageEngine {
     const lpTokens = ['UNI-V2', 'CAKE-LP', 'SLP', 'BPT'];
 
     for (const dex of this.activeDexes) {
-      if (dex.name.includes('Uniswap') || dex.name.includes('PancakeSwap') || 
+      if (dex.name.includes('Uniswap') || dex.name.includes('PancakeSwap') ||
           dex.name.includes('SushiSwap') || dex.name.includes('Balancer')) {
 
         // Simulate LP token price inefficiencies
@@ -426,7 +426,7 @@ export class ArbitrageEngine {
     });
 
     // Return highest scoring opportunity
-    const best = scoredOpportunities.reduce((prev, current) => 
+    const best = scoredOpportunities.reduce((prev, current) =>
       current.aiScore > prev.aiScore ? current : prev
     );
 
@@ -619,10 +619,10 @@ export class ArbitrageEngine {
 
     try {
       let allOpportunities: ArbitrageOpportunity[] = [];
-      
+
       // Only generate opportunities for supported OKX pairs
       const validOKXPairs = ['BTC/USDT', 'ETH/USDT', 'ETH/USDC', 'BTC/USDC', 'MATIC/USDT', 'LINK/USDT', 'UNI/USDT', 'AVAX/USDT'];
-      
+
       for (const strategy of TRADING_STRATEGIES) {
         const strategyOpportunities = await this.generateValidOKXOpportunities(strategy, validOKXPairs);
         allOpportunities.push(...strategyOpportunities);
@@ -651,7 +651,7 @@ export class ArbitrageEngine {
   private async generateValidOKXOpportunities(strategy: TradingStrategy, validPairs: string[]): Promise<ArbitrageOpportunity[]> {
     const opportunities: ArbitrageOpportunity[] = [];
     const activeDEXes = getAllActiveDEXes();
-    
+
     // Generate 1-2 opportunities per strategy with valid pairs only
     const opportunityCount = Math.floor(Math.random() * 2) + 1;
 
@@ -664,22 +664,22 @@ export class ArbitrageEngine {
       // Use only valid OKX trading pairs
       const tokenPair = validPairs[Math.floor(Math.random() * validPairs.length)];
       const basePrice = this.getBasePrice(tokenPair);
-      
+
       // Ensure minimum profit for strategy
       const minProfitMultiplier = 1 + strategy.minProfitThreshold + (Math.random() * 0.02); // Add variance
       const buyPrice = basePrice;
       const sellPrice = basePrice * minProfitMultiplier;
-      
+
       // Conservative parameters for real trading
       const amount = Math.min(1000, Math.random() * 500 + 100); // 100-600 units
       const estimatedProfit = (sellPrice - buyPrice) * amount;
       const profitPercentage = ((sellPrice - buyPrice) / buyPrice);
-      
+
       // Strategy-specific adjustments
       let adjustedProfit = estimatedProfit;
       let adjustedExecutionTime = strategy.avgExecutionTime;
       let adjustedRisk = Math.min(strategy.maxRiskLevel, 3); // Cap at risk level 3
-      
+
       if (strategy.id === 'flash_loan_arbitrage') {
         adjustedProfit *= 2; // Flash loan leverage
         adjustedExecutionTime = 10;
@@ -692,7 +692,7 @@ export class ArbitrageEngine {
         // Skip cross-chain for OKX optimization
         continue;
       }
-      
+
       // Only include if profit meets minimum threshold
       if (profitPercentage >= strategy.minProfitThreshold) {
         opportunities.push({
@@ -733,6 +733,67 @@ export class ArbitrageEngine {
     };
 
     return prices[tokenPair] || 1 + Math.random() * 100;
+  }
+
+  // This function was missing and is crucial for the updated logic in scanAllStrategiesWithValidation
+  // It's a placeholder that would ideally fetch real trading volume and risk score
+  private async getTradeDetails(opportunity: ArbitrageOpportunity): Promise<{ volume_available: number; risk_score: number }> {
+    // In a real scenario, this would call exchange APIs to get:
+    // - Current available volume for the token pair on the DEX
+    // - A calculated risk score based on market volatility, slippage, etc.
+    // For simulation purposes, we'll return dummy data.
+
+    // Simulate available volume (e.g., between 100 and 5000 tokens)
+    const volume_available = Math.random() * 4900 + 100;
+
+    // Simulate a risk score (e.g., between 1 and 5)
+    const risk_score = Math.floor(Math.random() * 5) + 1;
+
+    return { volume_available, risk_score };
+  }
+
+  // Function to calculate optimal trade amount based on opportunity and AI decision
+  private calculateOptimalTradeAmount(opportunity: ArbitrageOpportunity, aiDecision: { confidence: number }): number {
+    // Parse and validate volume available
+    const volumeAvailable = parseFloat(String(opportunity.liquidityScore * 10000)) || 100; // Using liquidityScore as a proxy for volume_available
+    const profitPct = parseFloat(String(opportunity.profitPercentage)) || 1;
+
+    // Start with a conservative base amount for real trading
+    const baseAmount = Math.min(volumeAvailable * 0.001, 0.5); // 0.1% of volume or max 0.5 token
+
+    // Conservative multipliers for live trading
+    let multiplier = 1.0;
+
+    // Profit-based multipliers - more conservative for real money
+    if (profitPct > 5) multiplier = 1.3;
+    else if (profitPct > 3) multiplier = 1.2;
+    else if (profitPct > 1.5) multiplier = 1.1;
+    else if (profitPct > 0.5) multiplier = 1.05;
+
+    // Risk adjustment - be very conservative with high risk
+    const riskScore = opportunity.riskLevel || 3; // Using opportunity.riskLevel as a proxy for risk_score
+    if (riskScore <= 1) multiplier *= 1.1;
+    else if (riskScore <= 2) multiplier *= 1.05;
+    else if (riskScore >= 3) multiplier *= 0.9;
+    else if (riskScore >= 4) multiplier *= 0.7;
+
+    // Confidence adjustment
+    const confidence = parseFloat(String(aiDecision.confidence)) || 50;
+    if (confidence > 80) multiplier *= 1.05;
+    else if (confidence < 50) multiplier *= 0.9;
+
+    const optimalAmount = Math.min(baseAmount * multiplier, volumeAvailable * 0.01);
+
+    // Ensure valid number and respect exchange minimums
+    const finalAmount = Math.max(optimalAmount, 0.1); // Use 0.1 as safe minimum
+
+    // Validate the result
+    if (isNaN(finalAmount) || finalAmount <= 0) {
+      console.warn('Invalid calculated amount, using fallback');
+      return 0.1; // Safe fallback
+    }
+
+    return Math.round(finalAmount * 1000) / 1000; // Round to 3 decimals
   }
 }
 

@@ -28,12 +28,12 @@ export interface EngineStatus {
 
 export class BackgroundArbitrageEngine {
   private config: BackgroundEngineConfig = {
-    scanInterval: 1000, // 1 second - MAXIMUM SPEED
+    scanInterval: 2000, // 2 seconds for stability
     executionEnabled: true,
-    maxConcurrentScans: 10, // More concurrent scans
-    emergencyStopEnabled: false, // NO EMERGENCY STOPS
+    maxConcurrentScans: 5, // Reduced for stability
+    emergencyStopEnabled: false,
     performanceLogging: true,
-    autoRebalancing: true // Auto rebalancing for continuous profit
+    autoRebalancing: true
   };
 
   private isRunning = false;
