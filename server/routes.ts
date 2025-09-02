@@ -43,9 +43,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Flash loan example endpoint
   app.get('/api/flashloan/example', async (req, res) => {
     try {
-      const example = await flashLoanExamples.executeExampleFlashLoanTrade();
+      const example = await flashLoanExamples.generateFlashLoanExample();
       res.json(example);
-    } catch (error) {
+    } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
@@ -58,7 +58,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         detailedTransaction: detailed,
         realMarketExample: realMarket
       });
-    } catch (error) {
+    } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });

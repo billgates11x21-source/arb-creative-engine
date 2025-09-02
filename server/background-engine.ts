@@ -250,8 +250,8 @@ export class BackgroundArbitrageEngine {
 
       const result = await okxService.executeAIOptimizedTrade(
         opportunity,
-        { strategy: opportunity.strategy, confidence: opportunity.confidence },
-        tradeAmount
+        tradeAmount,
+        { strategy: 'auto' }
       );
 
       return {
@@ -271,22 +271,19 @@ export class BackgroundArbitrageEngine {
   private async storeOpportunities(opportunities: any[]): Promise<void> {
     try {
       const dbOpportunities = opportunities.map(op => ({
-        opportunity_id: `bg_${op.id}`,
-        token_pair: op.token,
-        buy_exchange: op.buyDex,
-        sell_exchange: op.sellDex,
-        buy_price: op.buyPrice,
-        sell_price: op.sellPrice,
-        profit_percentage: op.profitPercentage * 100,
-        volume_available: op.amount,
-        risk_score: op.riskLevel,
-        confidence_score: op.confidence,
-        strategy_type: op.strategy,
-        execution_time_estimate: op.executionTime,
-        gas_estimate: op.gasEstimate.toString(),
-        liquidity_score: op.liquidityScore,
-        detected_at: new Date(),
-        expires_at: new Date(Date.now() + 5 * 60 * 1000) // 5 minutes
+        tokenPair: op.token || 'BTC/USDT',
+        buyExchange: op.buyDex || 'Exchange A',
+        sellExchange: op.sellDex || 'Exchange B',
+        buyPrice: op.buyPrice?.toString() || '0',
+        sellPrice: op.sellPrice?.toString() || '0',
+        profitAmount: op.profitAmount?.toString() || '0',
+        profitPercentage: (op.profitPercentage * 100)?.toString() || '0',
+        volumeAvailable: op.amount?.toString() || '0',
+        riskScore: op.riskLevel || 1,
+        gasCost: op.gasEstimate?.toString() || '0',
+        executionTime: op.executionTime?.toString() || '0',
+        status: 'discovered',
+        expiresAt: new Date(Date.now() + 5 * 60 * 1000) // 5 minutes
       }));
 
       if (dbOpportunities.length > 0) {
@@ -307,18 +304,18 @@ export class BackgroundArbitrageEngine {
       // Get recent performance data
       const recentTrades = await db.select()
         .from(executedTrades)
-        .where(gte(executedTrades.executedAt, new Date(Date.now() - 24 * 60 * 60 * 1000))) // Last 24 hours
-        .orderBy(desc(executedTrades.executedAt));
+        .where(gte(executedTrades.createdAt, new Date(Date.now() - 24 * 60 * 60 * 1000))) // Last 24 hours
+        .orderBy(desc(executedTrades.createdAt));
 
       // Calculate daily metrics
       const dailyProfit = recentTrades.reduce((sum, trade) => {
-        const profit = parseFloat(trade.actualProfitLoss || '0');
+        const profit = parseFloat(trade.profitRealized || '0');
         return sum + profit;
       }, 0);
 
       const dailyTrades = recentTrades.length;
       const successRate = recentTrades.filter(t => 
-        parseFloat(t.actualProfitLoss || '0') > 0
+        parseFloat(t.profitRealized || '0') > 0
       ).length / Math.max(1, dailyTrades);
 
       // Update risk metrics
@@ -387,15 +384,12 @@ export class BackgroundArbitrageEngine {
       for (const [strategyId, count] of Object.entries(strategyCounts)) {
         await db.insert(strategyPerformance)
           .values({
-            strategy_id: strategyId,
-            opportunities_found: count,
-            avg_profit_percentage: opportunities
-              .filter(op => op.strategy === strategyId)
-              .reduce((sum, op) => sum + op.profitPercentage, 0) / count,
-            success_rate: 0.75, // Placeholder
-            total_volume: opportunities
-              .filter(op => op.strategy === strategyId)
-              .reduce((sum, op) => sum + op.amount, 0)
+            strategyId: parseInt(strategyId),
+            date: new Date().toISOString().split('T')[0],
+            successRate: "0.75",
+            avgProfitPerTrade: "0.00",
+            totalTrades: count as number,
+            aiConfidenceScore: "0.50"
           })
           .onConflictDoNothing();
       }

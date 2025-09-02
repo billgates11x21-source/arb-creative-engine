@@ -8,6 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
+import { type RiskSettings } from "@shared/schema";
 import { 
   Shield, 
   AlertTriangle, 
@@ -20,7 +21,7 @@ import {
   Save
 } from "lucide-react";
 
-interface RiskSettings {
+interface LocalRiskSettings {
   maxPositionSize: number;
   maxDailyTrades: number; 
   maxDailyLoss: number;
@@ -29,12 +30,13 @@ interface RiskSettings {
   emergencyStopThreshold: number;
   btcEthAllocation: number;
   altAllocation: number;
+  isSimulationMode: boolean;
 }
 
 export function RiskManagementPanel() {
   const { toast } = useToast();
   
-  const [riskSettings, setRiskSettings] = useState<RiskSettings>({
+  const [riskSettings, setRiskSettings] = useState<LocalRiskSettings>({
     maxPositionSize: 1.0,
     maxDailyTrades: 50,
     maxDailyLoss: 10.0,
@@ -42,7 +44,8 @@ export function RiskManagementPanel() {
     maxSlippage: 1.5,
     emergencyStopThreshold: 5.0,
     btcEthAllocation: 80.0,
-    altAllocation: 20.0
+    altAllocation: 20.0,
+    isSimulationMode: true
   });
 
   const [isLoading, setIsLoading] = useState(false);
@@ -68,7 +71,7 @@ export function RiskManagementPanel() {
     }
   };
 
-  const updateSetting = (key: keyof RiskSettings, value: any) => {
+  const updateSetting = (key: keyof LocalRiskSettings, value: number | boolean) => {
     setRiskSettings(prev => ({
       ...prev,
       [key]: value
