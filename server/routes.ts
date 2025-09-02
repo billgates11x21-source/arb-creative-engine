@@ -257,19 +257,27 @@ async function scanArbitrageOpportunities(req: any, res: any) {
 
         storedOpportunities.push(formattedOpp);
 
-        // AI-driven automatic trading - Execute ALL profitable opportunities aggressively
-        const aiDecision = await makeAITradingDecision(formattedOpp);
-
-        // Execute ANY profitable opportunity with valid token pair
+        // Check actual OKX balance before considering execution
+        const spotBalance = await okxService.getSpotWalletBalance();
         const tokenPair = formattedOpp.token_pair;
         const isValidForOKX = tokenPair && tokenPair.includes('/') && !tokenPair.includes('LP') && !tokenPair.includes('INVALID');
-        const forceExecution = formattedOpp.profit_percentage > 0.1 && isValidForOKX; // Lowered to 0.1%
+        
+        // Check if we have sufficient balance for this token pair
+        const quoteCurrency = tokenPair.split('/')[1];
+        const availableBalance = spotBalance[quoteCurrency] || 0;
+        const minRequiredBalance = 10; // Minimum $10 equivalent
+        
+        const hasBalance = availableBalance >= minRequiredBalance;
+        const profitableEnough = formattedOpp.profit_percentage > 0.3; // Minimum 0.3%
 
-        if (isValidForOKX && forceExecution) {
+        if (isValidForOKX && hasBalance && profitableEnough) {
           try {
-            console.log(`🎯 Executing valid OKX trade for ${formattedOpp.token_pair}: ${aiDecision.reasoning}`);
+            // AI decision with balance consideration
+            const aiDecision = await makeAITradingDecision(formattedOpp, spotBalance);
+            
+            console.log(`🎯 Executing valid OKX trade for ${formattedOpp.token_pair}: Balance ${availableBalance} ${quoteCurrency}, Profit ${formattedOpp.profit_percentage}%`);
 
-            const optimalAmount = calculateOptimalTradeAmount(formattedOpp, aiDecision);
+            const optimalAmount = calculateOptimalTradeAmountWithBalance(formattedOpp, aiDecision, spotBalance);
             const executionStrategy = selectOptimalExecutionStrategy(formattedOpp, aiDecision);
 
             // Execute with enhanced error handling
@@ -794,24 +802,43 @@ function calculateRiskLevel(conditions: any): string {
   return 'LOW';
 }
 
-// AI Trading Decision Engine - Aggressive auto-execution
-async function makeAITradingDecision(opportunity: any): Promise<any> {
-  const profitScore = opportunity.profit_percentage * 20; // Increased multiplier
-  const riskScore = (5 - opportunity.risk_score) * 25; // Increased multiplier
-  const volumeScore = Math.min(opportunity.volume_available * 5, 100); // Adjusted for better scoring
-  const timeScore = opportunity.execution_time < 5 ? 90 : 70; // Higher speed bonus
+// AI Trading Decision Engine with balance consideration
+async function makeAITradingDecision(opportunity: any, spotBalance?: { [currency: string]: number }): Promise<any> {
+  const profitScore = opportunity.profit_percentage * 20;
+  const riskScore = (5 - opportunity.risk_score) * 25;
+  const volumeScore = Math.min(opportunity.volume_available * 5, 100);
+  const timeScore = opportunity.execution_time < 5 ? 90 : 70;
 
-  // AI confidence calculation with bias toward execution
-  const aiConfidence = (profitScore * 0.5 + riskScore * 0.25 + volumeScore * 0.15 + timeScore * 0.1);
+  // Balance score - higher if we have good balance
+  let balanceScore = 50; // Default
+  if (spotBalance) {
+    const quoteCurrency = opportunity.token_pair.split('/')[1];
+    const availableBalance = spotBalance[quoteCurrency] || 0;
+    
+    if (availableBalance > 100) balanceScore = 90;
+    else if (availableBalance > 50) balanceScore = 80;
+    else if (availableBalance > 20) balanceScore = 70;
+    else if (availableBalance > 10) balanceScore = 60;
+    else balanceScore = 30; // Low balance
+  }
 
-  // Lowered threshold for aggressive auto-execution
-  const executionThreshold = 25; // Much lower threshold
+  // AI confidence calculation with balance consideration
+  const aiConfidence = (
+    profitScore * 0.4 + 
+    riskScore * 0.2 + 
+    volumeScore * 0.1 + 
+    timeScore * 0.1 + 
+    balanceScore * 0.2 // 20% weight on balance
+  );
+
+  // Higher threshold for more selective execution
+  const executionThreshold = 55; // More conservative threshold
 
   // Strategy selection based on opportunity characteristics
-  let recommendedStrategy = 'flash_loan';
+  let recommendedStrategy = 'conservative_arbitrage';
   let strategyId = 1;
 
-  if (opportunity.profit_percentage > 3) {
+  if (opportunity.profit_percentage > 3 && balanceScore > 70) {
     recommendedStrategy = 'high_profit_arbitrage';
     strategyId = 2;
   } else if (opportunity.profit_percentage > 1.5) {
@@ -822,17 +849,22 @@ async function makeAITradingDecision(opportunity: any): Promise<any> {
     strategyId = 4;
   }
 
-  // Auto-execute ANY profitable opportunity above minimum threshold
-  const shouldExecute = opportunity.profit_percentage > 0.1 && opportunity.risk_score <= 4; // Lowered profit threshold and increased risk tolerance
+  // More selective execution criteria
+  const shouldExecute = (
+    opportunity.profit_percentage > 0.3 && 
+    opportunity.risk_score <= 3 && 
+    aiConfidence >= executionThreshold &&
+    balanceScore >= 60
+  );
 
-  console.log(`AI Decision for ${opportunity.id}: Profit ${opportunity.profit_percentage}%, Risk ${opportunity.risk_score}, Confidence ${aiConfidence.toFixed(1)} - ${shouldExecute ? 'EXECUTE' : 'SKIP'}`);
+  console.log(`AI Decision for ${opportunity.id}: Profit ${opportunity.profit_percentage}%, Risk ${opportunity.risk_score}, Balance Score ${balanceScore}, Confidence ${aiConfidence.toFixed(1)} - ${shouldExecute ? 'EXECUTE' : 'SKIP'}`);
 
   return {
     shouldExecute,
-    confidence: Math.max(aiConfidence, 50), // Minimum confidence boost
+    confidence: aiConfidence,
     strategy: recommendedStrategy,
     strategyId,
-    reasoning: `AI Score: ${aiConfidence.toFixed(1)}/100 - Profit: ${profitScore}, Risk: ${riskScore}, Volume: ${volumeScore}`,
+    reasoning: `AI Score: ${aiConfidence.toFixed(1)}/100 - Profit: ${profitScore}, Risk: ${riskScore}, Balance: ${balanceScore}`,
     executionPriority: opportunity.profit_percentage > 2 ? 'HIGH' : opportunity.profit_percentage > 1 ? 'MEDIUM' : 'LOW'
   };
 }
@@ -916,36 +948,49 @@ async function makeAdvancedAITradingDecision(opportunity: any): Promise<any> {
 }
 
 
-function calculateOptimalTradeAmount(opportunity: any, aiDecision: any): number {
-  // Start with a conservative base amount for real trading
-  const baseAmount = Math.min(opportunity.volume_available * 0.01, 1); // 1% of volume or max 1 token
+function calculateOptimalTradeAmountWithBalance(opportunity: any, aiDecision: any, spotBalance: { [currency: string]: number }): number {
+  const tokenPair = opportunity.token_pair;
+  const quoteCurrency = tokenPair.split('/')[1];
+  const availableBalance = spotBalance[quoteCurrency] || 0;
+
+  // Get allocation rules for this token type
+  const allocation = okxService.getTokenAllocation(tokenPair, availableBalance);
+  
+  // Start with balance-based calculation
+  const maxTradeValue = allocation.maxUsable * 0.02; // Max 2% of allocated balance per trade
+  const baseAmount = Math.min(maxTradeValue, availableBalance * 0.05); // Never exceed 5% of total balance
 
   // Conservative multipliers for live trading
-  let multiplier = 1.0; // Start conservatively
+  let multiplier = 1.0;
 
-  // Profit-based multipliers - more conservative for real money
-  if (opportunity.profit_percentage > 5) multiplier = 1.5;
-  else if (opportunity.profit_percentage > 3) multiplier = 1.3;
-  else if (opportunity.profit_percentage > 1.5) multiplier = 1.2;
-  else if (opportunity.profit_percentage > 0.5) multiplier = 1.1;
-  else if (opportunity.profit_percentage > 0.2) multiplier = 1.05; // Slight increase for minimal profit
+  // Profit-based multipliers
+  if (opportunity.profit_percentage > 5) multiplier = 1.3;
+  else if (opportunity.profit_percentage > 3) multiplier = 1.2;
+  else if (opportunity.profit_percentage > 1.5) multiplier = 1.1;
+  else if (opportunity.profit_percentage > 0.5) multiplier = 1.05;
 
-  // Risk adjustment - be very conservative with high risk
-  if (opportunity.risk_score <= 1) multiplier *= 1.2;
-  else if (opportunity.risk_score <= 2) multiplier *= 1.1;
-  else if (opportunity.risk_score <= 3) multiplier *= 1.0; // Neutral for moderate risk
-  else if (opportunity.risk_score <= 4) multiplier *= 0.8;
-  else if (opportunity.risk_score <= 5) multiplier *= 0.6;
-  else multiplier *= 0.4; // Very conservative for high risk
+  // Risk adjustment
+  if (opportunity.risk_score <= 1) multiplier *= 1.1;
+  else if (opportunity.risk_score <= 2) multiplier *= 1.0;
+  else if (opportunity.risk_score >= 3) multiplier *= 0.9;
 
   // Confidence adjustment
-  if (aiDecision.confidence > 80) multiplier *= 1.1;
-  else if (aiDecision.confidence < 50) multiplier *= 0.8;
+  if (aiDecision.confidence > 70) multiplier *= 1.05;
+  else if (aiDecision.confidence < 60) multiplier *= 0.95;
 
-  const optimalAmount = Math.min(baseAmount * multiplier, opportunity.volume_available * 0.05);
+  // Balance availability adjustment
+  if (availableBalance > 100) multiplier *= 1.1;
+  else if (availableBalance < 20) multiplier *= 0.8;
 
-  // Use very small amounts for live trading - respect exchange minimums
-  return Math.max(optimalAmount, 0.001); // Much smaller minimum for conservative real trading
+  const optimalAmount = Math.min(baseAmount * multiplier, allocation.maxUsable * 0.05);
+
+  // Ensure minimum viable trade size
+  return Math.max(optimalAmount, 5); // Minimum $5 trade
+}
+
+// Keep original function for backward compatibility
+function calculateOptimalTradeAmount(opportunity: any, aiDecision: any): number {
+  return calculateOptimalTradeAmountWithBalance(opportunity, aiDecision, { 'USDT': 100, 'USDC': 50 });
 }
 
 function selectOptimalExecutionStrategy(opportunity: any, aiDecision: any): any {
