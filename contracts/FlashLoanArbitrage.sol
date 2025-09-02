@@ -391,13 +391,26 @@ contract FlashLoanArbitrage is Ownable, ReentrancyGuard {
         }
     }
 
+    // OKX wallet address for emergency withdrawals
+    address public constant OKX_WALLET = 0xecfcd0c695c7d66be1a957e84ac822ce95ac6e24;
+    
     // Emergency functions
     function emergencyWithdraw(address token) external onlyOwner {
         uint256 balance = IERC20(token).balanceOf(address(this));
         if (balance > 0) {
-            // Transfer profits to the owner's OKX spot wallet
-            IERC20(token).safeTransfer(owner(), balance);
-            emit ProfitWithdrawn(token, balance, owner());
+            // Transfer profits directly to OKX wallet address
+            IERC20(token).safeTransfer(OKX_WALLET, balance);
+            emit ProfitWithdrawn(token, balance, OKX_WALLET);
+        }
+    }
+    
+    // Emergency withdrawal to specific address (fallback)
+    function emergencyWithdrawTo(address token, address recipient) external onlyOwner {
+        require(recipient != address(0), "Invalid recipient");
+        uint256 balance = IERC20(token).balanceOf(address(this));
+        if (balance > 0) {
+            IERC20(token).safeTransfer(recipient, balance);
+            emit ProfitWithdrawn(token, balance, recipient);
         }
     }
 

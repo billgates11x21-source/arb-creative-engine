@@ -461,12 +461,17 @@ class FlashLoanService {
     // Get OKX deposit address for specific asset
     private async getOKXDepositAddress(asset: string): Promise<string | null> {
         try {
-            // Map Base network tokens to OKX symbols
-            const tokenSymbol = this.getOKXSymbolFromAddress(asset);
+            // Your OKX Base/Ethereum wallet address
+            const OKX_WALLET_ADDRESS = "0xecfcd0c695c7d66be1a957e84ac822ce95ac6e24";
             
-            // For now, return the flash loan wallet address
-            // In production, this would call OKX API to get deposit address
-            return this.config?.signer.address || null;
+            console.log(`🏦 Using OKX wallet address: ${OKX_WALLET_ADDRESS}`);
+            
+            // Validate the address format
+            if (!OKX_WALLET_ADDRESS.startsWith('0x') || OKX_WALLET_ADDRESS.length !== 42) {
+                throw new Error("Invalid OKX wallet address format");
+            }
+            
+            return OKX_WALLET_ADDRESS;
 
         } catch (error) {
             console.error("Error getting OKX deposit address:", error);
