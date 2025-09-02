@@ -292,8 +292,8 @@ export function useArbitrageEngine() {
       }
 
       // Use very small amounts for live trading with real money
-      const maxAmount = Math.min(opportunity.volume_available * 0.01, 1);
-      const tradeAmount = Math.max(maxAmount, 0.01); // Minimum viable trade amount
+      const maxAmount = Math.min(opportunity.volume_available * 0.001, 0.1);
+      const tradeAmount = Math.max(maxAmount, 0.001); // Very small minimum for live trading
 
       const { data, error } = await apiClient.functions.invoke('trading-engine', {
         body: {

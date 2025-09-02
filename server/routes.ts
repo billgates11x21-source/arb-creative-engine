@@ -556,31 +556,32 @@ async function makeAITradingDecision(opportunity: any): Promise<any> {
 }
 
 function calculateOptimalTradeAmount(opportunity: any, aiDecision: any): number {
-  // Start with a more aggressive base amount
-  const baseAmount = Math.min(opportunity.volume_available * 0.1, 10); // 10% of volume or max 10 tokens
+  // Start with a conservative base amount for real trading
+  const baseAmount = Math.min(opportunity.volume_available * 0.01, 1); // 1% of volume or max 1 token
   
-  // AI adjusts amount based on profit potential - more aggressive
-  let multiplier = 1.5; // Start higher
+  // Conservative multipliers for live trading
+  let multiplier = 1.0; // Start conservatively
   
-  // Profit-based multipliers - execute larger amounts for better profits
-  if (opportunity.profit_percentage > 5) multiplier = 3.0;
-  else if (opportunity.profit_percentage > 3) multiplier = 2.5;
-  else if (opportunity.profit_percentage > 1.5) multiplier = 2.0;
-  else if (opportunity.profit_percentage > 0.5) multiplier = 1.5;
+  // Profit-based multipliers - more conservative for real money
+  if (opportunity.profit_percentage > 5) multiplier = 1.5;
+  else if (opportunity.profit_percentage > 3) multiplier = 1.3;
+  else if (opportunity.profit_percentage > 1.5) multiplier = 1.2;
+  else if (opportunity.profit_percentage > 0.5) multiplier = 1.1;
   
-  // Risk adjustment - be more aggressive with low risk
-  if (opportunity.risk_score <= 1) multiplier *= 1.5;
-  else if (opportunity.risk_score <= 2) multiplier *= 1.2;
-  else if (opportunity.risk_score >= 4) multiplier *= 0.8;
+  // Risk adjustment - be very conservative with high risk
+  if (opportunity.risk_score <= 1) multiplier *= 1.2;
+  else if (opportunity.risk_score <= 2) multiplier *= 1.1;
+  else if (opportunity.risk_score >= 3) multiplier *= 0.8;
+  else if (opportunity.risk_score >= 4) multiplier *= 0.5;
   
-  // Confidence boost
-  if (aiDecision.confidence > 80) multiplier *= 1.3;
-  else if (aiDecision.confidence > 60) multiplier *= 1.1;
+  // Confidence adjustment
+  if (aiDecision.confidence > 80) multiplier *= 1.1;
+  else if (aiDecision.confidence < 50) multiplier *= 0.8;
   
-  const optimalAmount = Math.min(baseAmount * multiplier, opportunity.volume_available * 0.3);
+  const optimalAmount = Math.min(baseAmount * multiplier, opportunity.volume_available * 0.05);
   
-  // Ensure minimum trade amount for real execution
-  return Math.max(optimalAmount, 0.1); // Higher minimum for real trades
+  // Use very small amounts for live trading - respect exchange minimums
+  return Math.max(optimalAmount, 0.01); // Much smaller minimum for conservative real trading
 }
 
 function selectOptimalExecutionStrategy(opportunity: any, aiDecision: any): any {
