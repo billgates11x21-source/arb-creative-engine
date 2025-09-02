@@ -421,18 +421,46 @@ class OKXService {
   async executeRealTrade(opportunity: any, amount: number): Promise<any> {
     try {
       // Handle both database format (tokenPair) and API format (token_pair)
-      const tokenPair = opportunity.tokenPair || opportunity.token_pair;
+      let tokenPair = opportunity.tokenPair || opportunity.token_pair;
       console.log(`Executing real trade for ${tokenPair} amount: ${amount}`);
       
       if (!tokenPair) {
         throw new Error('Token pair is missing from opportunity');
       }
       
+      // Fix token pair format - ensure it has proper format
+      if (!tokenPair.includes('/')) {
+        // If it's just a single token like "ETH", convert to valid pair
+        if (tokenPair === 'ETH') {
+          tokenPair = 'ETH/USDT';
+        } else if (tokenPair === 'BTC') {
+          tokenPair = 'BTC/USDT';
+        } else if (tokenPair === 'MATIC') {
+          tokenPair = 'MATIC/USDT';
+        } else if (tokenPair === 'LINK') {
+          tokenPair = 'LINK/USDT';
+        } else if (tokenPair === 'UNI') {
+          tokenPair = 'UNI/USDT';
+        } else if (tokenPair.includes('LP-TOKENS') || tokenPair.includes('LP')) {
+          // Skip LP tokens as they're not tradeable on OKX
+          throw new Error('LP tokens not supported on OKX exchange');
+        } else {
+          // Default to USDT pair for unknown tokens
+          tokenPair = `${tokenPair}/USDT`;
+        }
+      }
+      
       // Extract trading pair from opportunity
       const [baseCurrency, quoteCurrency] = tokenPair.split('/');
       
       if (!baseCurrency || !quoteCurrency) {
-        throw new Error('Invalid trading pair format');
+        throw new Error('Invalid trading pair format after conversion');
+      }
+      
+      // Validate that this is a supported trading pair
+      const supportedTokens = ['BTC', 'ETH', 'USDT', 'USDC', 'MATIC', 'LINK', 'UNI', 'AVAX'];
+      if (!supportedTokens.includes(baseCurrency) || !supportedTokens.includes(quoteCurrency)) {
+        throw new Error(`Unsupported trading pair: ${tokenPair}. Only major tokens are supported.`);
       }
       
       const symbol = `${baseCurrency}/${quoteCurrency}`;

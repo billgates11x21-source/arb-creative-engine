@@ -263,13 +263,15 @@ async function scanArbitrageOpportunities(req: any, res: any) {
         
         storedOpportunities.push(formattedOpp);
         
-        // AI-driven automatic trading - Execute ALL profitable opportunities
+        // AI-driven automatic trading - Execute profitable opportunities with proper validation
         const aiDecision = await makeAITradingDecision(formattedOpp);
         
-        // Force execution for any opportunity with profit > 0.1%
-        const forceExecution = formattedOpp.profit_percentage > 0.1;
+        // Only execute if token pair is valid for OKX and profit is significant
+        const tokenPair = formattedOpp.token_pair;
+        const isValidForOKX = tokenPair && tokenPair.includes('/') && !tokenPair.includes('LP') && !tokenPair.includes('INVALID');
+        const forceExecution = formattedOpp.profit_percentage > 0.5 && isValidForOKX; // Increased threshold
         
-        if (aiDecision.shouldExecute || forceExecution) {
+        if ((aiDecision.shouldExecute || forceExecution) && isValidForOKX) {
           try {
             console.log(`🤖 AI AUTO-EXECUTING opportunity ${formattedOpp.id} with ${formattedOpp.profit_percentage}% profit using ${aiDecision.strategy} strategy`);
             
@@ -318,7 +320,8 @@ async function scanArbitrageOpportunities(req: any, res: any) {
             await logAIExecutionFailure(formattedOpp, aiDecision, autoExecError);
           }
         } else {
-          console.log(`⏭️ AI skipping opportunity ${formattedOpp.id} - Profit: ${formattedOpp.profit_percentage}%, Risk: ${formattedOpp.risk_score}`);
+          const reason = !isValidForOKX ? 'Invalid token pair for OKX' : `Low profit: ${formattedOpp.profit_percentage}%`;
+          console.log(`⏭️ AI skipping opportunity ${formattedOpp.id} - ${reason}, Risk: ${formattedOpp.risk_score}`);
         }
       }
     } catch (dbError) {

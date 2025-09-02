@@ -127,27 +127,27 @@ export class ArbitrageEngine {
   async scanCrossExchangeOpportunities(): Promise<ArbitrageOpportunity[]> {
     const opportunities: ArbitrageOpportunity[] = [];
     const tokens = ['BTC', 'ETH', 'USDT', 'USDC', 'LINK', 'UNI', 'AVAX', 'MATIC'];
-    
+
     for (const token of tokens) {
       const supportingDexes = this.activeDexes.filter(dex => 
         dex.supportedTokens.includes(token)
       );
-      
+
       // Compare prices across all supporting DEXes
       for (let i = 0; i < supportingDexes.length; i++) {
         for (let j = i + 1; j < supportingDexes.length; j++) {
           const buyDex = supportingDexes[i];
           const sellDex = supportingDexes[j];
-          
+
           // Simulate price data (in real implementation, fetch from APIs)
           const buyPrice = this.simulatePrice(token, buyDex.id);
           const sellPrice = this.simulatePrice(token, sellDex.id, 1.01); // 1% higher
-          
+
           if (sellPrice > buyPrice) {
             const amount = Math.min(1000, buyDex.liquidityThreshold / buyPrice);
             const profit = calculateArbitrageProfit(buyPrice, sellPrice, amount, buyDex, sellDex);
             const profitPercentage = profit / (buyPrice * amount);
-            
+
             if (profitPercentage >= this.strategies[0].minProfitThreshold) {
               opportunities.push({
                 id: `cross_${Date.now()}_${i}_${j}`,
@@ -171,7 +171,7 @@ export class ArbitrageEngine {
         }
       }
     }
-    
+
     return opportunities.slice(0, 10); // Top 10 opportunities
   }
 
@@ -185,26 +185,26 @@ export class ArbitrageEngine {
       ['UNI', 'ETH', 'USDT'],
       ['LINK', 'ETH', 'USDC']
     ];
-    
+
     for (const dex of this.activeDexes) {
       for (const [tokenA, tokenB, tokenC] of triangularPairs) {
         if (dex.supportedTokens.includes(tokenA) && 
             dex.supportedTokens.includes(tokenB) && 
             dex.supportedTokens.includes(tokenC)) {
-          
+
           // Calculate triangular arbitrage
           const priceAB = this.simulatePrice(`${tokenA}/${tokenB}`, dex.id);
           const priceBC = this.simulatePrice(`${tokenB}/${tokenC}`, dex.id);
           const priceCA = this.simulatePrice(`${tokenC}/${tokenA}`, dex.id);
-          
+
           // Expected return: (1 / priceAB) * (1 / priceBC) * (1 / priceCA)
           const expectedReturn = (1 / priceAB) * (1 / priceBC) * (1 / priceCA);
           const profitPercentage = expectedReturn - 1;
-          
+
           if (profitPercentage >= this.strategies[1].minProfitThreshold) {
             const amount = 100; // Base amount for triangular arbitrage
             const estimatedProfit = amount * profitPercentage;
-            
+
             opportunities.push({
               id: `tri_${Date.now()}_${dex.id}`,
               strategy: 'triangular_arbitrage',
@@ -226,7 +226,7 @@ export class ArbitrageEngine {
         }
       }
     }
-    
+
     return opportunities.slice(0, 8);
   }
 
@@ -238,17 +238,17 @@ export class ArbitrageEngine {
       { name: 'balancer', fee: 0.0 }, // No fee
       { name: 'dydx', fee: 0.0002 } // 0.02%
     ];
-    
+
     // Find large arbitrage opportunities that benefit from leveraged capital
     const crossExchangeOps = await this.scanCrossExchangeOpportunities();
-    
+
     for (const op of crossExchangeOps) {
       if (op.profitPercentage >= 0.012) { // 1.2% minimum for flash loans
         for (const provider of flashLoanProviders) {
           const leveragedAmount = op.amount * 10; // 10x leverage
           const flashLoanFee = leveragedAmount * provider.fee;
           const leveragedProfit = op.estimatedProfit * 10 - flashLoanFee;
-          
+
           if (leveragedProfit > op.estimatedProfit * 5) { // 5x profit improvement
             opportunities.push({
               id: `flash_${Date.now()}_${provider.name}`,
@@ -271,7 +271,7 @@ export class ArbitrageEngine {
         }
       }
     }
-    
+
     return opportunities.slice(0, 5);
   }
 
@@ -283,37 +283,37 @@ export class ArbitrageEngine {
       { name: 'wormhole', fee: 0.0015, avgTime: 300 },
       { name: 'multichain', fee: 0.001, avgTime: 240 }
     ];
-    
+
     const chains = ['ethereum', 'polygon', 'bsc', 'arbitrum', 'optimism', 'base', 'avalanche'];
     const tokens = ['ETH', 'USDT', 'USDC', 'WBTC'];
-    
+
     for (const token of tokens) {
       for (let i = 0; i < chains.length; i++) {
         for (let j = i + 1; j < chains.length; j++) {
           const sourceChain = chains[i];
           const targetChain = chains[j];
-          
+
           const sourceDexes = getDEXesByChain(sourceChain).filter(dex => 
             dex.supportedTokens.includes(token)
           );
           const targetDexes = getDEXesByChain(targetChain).filter(dex => 
             dex.supportedTokens.includes(token)
           );
-          
+
           if (sourceDexes.length > 0 && targetDexes.length > 0) {
             const buyDex = sourceDexes[0];
             const sellDex = targetDexes[0];
-            
+
             const buyPrice = this.simulatePrice(token, buyDex.id);
             const sellPrice = this.simulatePrice(token, sellDex.id, 1.03); // 3% higher
-            
+
             for (const bridge of bridgeProviders) {
               const amount = 1000;
               const bridgeFee = amount * bridge.fee;
               const grossProfit = (sellPrice - buyPrice) * amount;
               const netProfit = grossProfit - bridgeFee;
               const profitPercentage = netProfit / (buyPrice * amount);
-              
+
               if (profitPercentage >= this.strategies[3].minProfitThreshold) {
                 opportunities.push({
                   id: `cross_${Date.now()}_${sourceChain}_${targetChain}`,
@@ -338,7 +338,7 @@ export class ArbitrageEngine {
         }
       }
     }
-    
+
     return opportunities.slice(0, 6);
   }
 
@@ -346,21 +346,21 @@ export class ArbitrageEngine {
   async scanLiquidityPoolOpportunities(): Promise<ArbitrageOpportunity[]> {
     const opportunities: ArbitrageOpportunity[] = [];
     const lpTokens = ['UNI-V2', 'CAKE-LP', 'SLP', 'BPT'];
-    
+
     for (const dex of this.activeDexes) {
       if (dex.name.includes('Uniswap') || dex.name.includes('PancakeSwap') || 
           dex.name.includes('SushiSwap') || dex.name.includes('Balancer')) {
-        
+
         // Simulate LP token price inefficiencies
         const lpTokenPrice = this.simulatePrice('LP-TOKEN', dex.id);
         const underlyingValue = lpTokenPrice * 1.018; // 1.8% premium on underlying
-        
+
         const profitPercentage = (underlyingValue - lpTokenPrice) / lpTokenPrice;
-        
+
         if (profitPercentage >= this.strategies[4].minProfitThreshold) {
           const amount = 500;
           const estimatedProfit = amount * profitPercentage;
-          
+
           opportunities.push({
             id: `lp_${Date.now()}_${dex.id}`,
             strategy: 'liquidity_pool_arbitrage',
@@ -381,16 +381,16 @@ export class ArbitrageEngine {
         }
       }
     }
-    
+
     return opportunities.slice(0, 4);
   }
 
   // Advanced Arbitrage Detection Algorithm
   async scanAllStrategies(): Promise<ArbitrageOpportunity[]> {
     if (this.isScanning) return [];
-    
+
     this.isScanning = true;
-    
+
     try {
       const [crossExchange, triangular, flashLoan, crossChain, liquidityPool] = await Promise.all([
         this.scanCrossExchangeOpportunities(),
@@ -399,7 +399,7 @@ export class ArbitrageEngine {
         this.scanCrossChainOpportunities(),
         this.scanLiquidityPoolOpportunities()
       ]);
-      
+
       const allOpportunities = [
         ...crossExchange,
         ...triangular,
@@ -407,7 +407,7 @@ export class ArbitrageEngine {
         ...crossChain,
         ...liquidityPool
       ];
-      
+
       // Sort by profit percentage and confidence score
       return allOpportunities
         .sort((a, b) => (b.profitPercentage * b.confidence) - (a.profitPercentage * a.confidence))
@@ -420,34 +420,34 @@ export class ArbitrageEngine {
   // AI Strategy Selection Algorithm
   selectOptimalStrategy(opportunities: ArbitrageOpportunity[], marketConditions: any): ArbitrageOpportunity | null {
     if (opportunities.length === 0) return null;
-    
+
     // AI scoring algorithm considering multiple factors
     const scoredOpportunities = opportunities.map(op => {
       let score = 0;
-      
+
       // Profit weight (40%)
       score += op.profitPercentage * 40;
-      
+
       // Confidence weight (25%)
       score += (op.confidence / 100) * 25;
-      
+
       // Risk adjustment (20%)
       score += (6 - op.riskLevel) * 3.33;
-      
+
       // Liquidity score (10%)
       score += op.liquidityScore * 10;
-      
+
       // Execution time bonus (5%)
       score += op.executionTime < 30 ? 5 : 0;
-      
+
       return { ...op, aiScore: score };
     });
-    
+
     // Return highest scoring opportunity
     const best = scoredOpportunities.reduce((prev, current) => 
       current.aiScore > prev.aiScore ? current : prev
     );
-    
+
     return best.aiScore > 50 ? best : null; // Minimum threshold
   }
 
@@ -456,7 +456,7 @@ export class ArbitrageEngine {
     const priceAB = this.simulatePrice(`${tokenA}/${tokenB}`, dex.id);
     const priceBC = this.simulatePrice(`${tokenB}/${tokenC}`, dex.id);
     const priceCA = this.simulatePrice(`${tokenC}/${tokenA}`, dex.id);
-    
+
     // Formula: Return = (1/P_AB) * (1/P_BC) * (1/P_CA) - 1
     return (1 / priceAB) * (1 / priceBC) * (1 / priceCA) - 1;
   }
@@ -465,7 +465,7 @@ export class ArbitrageEngine {
     const leverageMultiplier = loanAmount / opportunity.amount;
     const leveragedProfit = opportunity.estimatedProfit * leverageMultiplier;
     const flashLoanCost = loanAmount * fee;
-    
+
     return leveragedProfit - flashLoanCost;
   }
 
@@ -474,7 +474,7 @@ export class ArbitrageEngine {
     const sourceMultiplier = chainConfigs[sourceChain] || 0.5;
     const targetMultiplier = chainConfigs[targetChain] || 0.5;
     const timeDecay = Math.exp(-bridgeTime / 600); // Decay over 10 minutes
-    
+
     return (sourceMultiplier + targetMultiplier) / 2 * timeDecay;
   }
 
@@ -490,9 +490,9 @@ export class ArbitrageEngine {
     const slippageRisk = opportunity.riskLevel;
     const gasRisk = opportunity.gasEstimate > 200000 ? 3 : 1;
     const timingRisk = opportunity.executionTime > 60 ? 4 : 1;
-    
+
     const totalRisk = (liquidityRisk + slippageRisk + gasRisk + timingRisk) / 4;
-    
+
     return {
       liquidityRisk,
       slippageRisk,
@@ -516,11 +516,11 @@ export class ArbitrageEngine {
       'BNB': 310,
       'LP-TOKEN': 125.50
     };
-    
+
     const basePrice = basePrices[symbol] || basePrices[symbol.split('/')[0]] || 1.0;
     const randomVariation = 0.98 + Math.random() * 0.04; // ±2% variation
     const dexVariation = dexId.includes('curve') ? 0.999 : (0.995 + Math.random() * 0.01);
-    
+
     return basePrice * multiplier * randomVariation * dexVariation;
   }
 
@@ -542,6 +542,135 @@ export class ArbitrageEngine {
       return true;
     }
     return false;
+  }
+
+  // Helper to generate opportunities for a given strategy
+  private async generateOpportunitiesForStrategy(strategy: TradingStrategy): Promise<ArbitrageOpportunity[]> {
+    const opportunities: ArbitrageOpportunity[] = [];
+    const activeDEXes = getAllActiveDEXes();
+
+    // Generate 1-3 opportunities per strategy
+    const opportunityCount = Math.floor(Math.random() * 3) + 1;
+
+    // Define valid trading pairs that work with OKX
+    const validPairs = [
+      'BTC/USDT', 'ETH/USDT', 'ETH/USDC', 'BTC/USDC',
+      'MATIC/USDT', 'LINK/USDT', 'UNI/USDT', 'AVAX/USDT'
+    ];
+
+    for (let i = 0; i < opportunityCount; i++) {
+      const dex1 = activeDEXes[Math.floor(Math.random() * activeDEXes.length)];
+      const dex2 = activeDEXes[Math.floor(Math.random() * activeDEXes.length)];
+
+      if (dex1.id === dex2.id) continue; // Skip same DEX
+
+      // Use only valid trading pairs
+      const tokenPair = validPairs[Math.floor(Math.random() * validPairs.length)];
+
+      // Generate realistic price data based on token pair
+      const basePrice = this.getBasePrice(tokenPair);
+      const priceVariance = strategy.minProfitThreshold + (Math.random() * 0.05); // Add some variance
+
+      const buyPrice = basePrice;
+      const sellPrice = basePrice * (1 + priceVariance);
+      const profitPercentage = ((sellPrice - buyPrice) / buyPrice) * 100;
+
+      let simulatedProfit = (sellPrice - buyPrice) * 1000; // Assume 1000 units traded
+      let simulatedGas = dex1.avgGasCost + dex2.avgGasCost;
+      let simulatedExecutionTime = Math.max(dex1.avgExecutionTime, dex2.avgExecutionTime);
+      let simulatedConfidence = Math.random() * 30 + 70; // 70-100% confidence
+
+      // Adjust parameters based on strategy
+      if (strategy.id === 'cross_exchange_arbitrage') {
+        simulatedProfit *= 1.5;
+        simulatedExecutionTime = 15;
+      } else if (strategy.id === 'triangular_arbitrage') {
+        simulatedProfit *= 0.8;
+        simulatedExecutionTime = 8;
+        simulatedGas *= 2; // More gas for 3-leg trades
+      } else if (strategy.id === 'flash_loan_arbitrage') {
+        simulatedProfit *= 5; // Leveraged profit
+        simulatedExecutionTime = 12;
+        simulatedGas += 50000; // Additional gas for flash loan
+      } else if (strategy.id === 'cross_chain_arbitrage') {
+        simulatedProfit *= 2;
+        simulatedExecutionTime = 300; // Bridge time
+        simulatedGas *= 3; // Cross-chain gas
+      } else if (strategy.id === 'liquidity_pool_arbitrage') {
+        simulatedProfit *= 1.2;
+        simulatedExecutionTime = 45;
+      }
+
+      // Ensure profit percentage is at least the strategy's minimum
+      const minProfitRequired = strategy.minProfitThreshold * 100;
+      if (profitPercentage < minProfitRequired) {
+        continue; // Skip if profit is too low
+      }
+
+      opportunities.push({
+        id: `${strategy.id}_${Date.now()}_${i}`,
+        strategy: strategy.id,
+        token: tokenPair,
+        buyDex: dex1.id,
+        sellDex: dex2.id,
+        buyPrice: buyPrice,
+        sellPrice: sellPrice,
+        amount: 1000, // Base amount
+        estimatedProfit: simulatedProfit,
+        profitPercentage: profitPercentage / 100, // Store as decimal
+        riskLevel: Math.floor(Math.random() * strategy.maxRiskLevel) + 1,
+        gasEstimate: simulatedGas,
+        executionTime: simulatedExecutionTime,
+        confidence: simulatedConfidence,
+        liquidityScore: Math.min(dex1.liquidityThreshold, dex2.liquidityThreshold) / 10000
+      });
+    }
+
+    return opportunities;
+  }
+
+  // Generate simulated opportunities for each strategy
+  async scanAllStrategiesWithValidation(): Promise<ArbitrageOpportunity[]> {
+    if (this.isScanning) return [];
+
+    this.isScanning = true;
+
+    try {
+      let allOpportunities: ArbitrageOpportunity[] = [];
+      for (const strategy of TRADING_STRATEGIES) {
+        const strategyOpportunities = await this.generateOpportunitiesForStrategy(strategy);
+        // Filter out invalid token pairs
+        const validOpportunities = strategyOpportunities.filter(op => {
+          const tokenPair = op.token;
+          return tokenPair.includes('/') && !tokenPair.includes('LP') && !tokenPair.includes('INVALID');
+        });
+        allOpportunities.push(...validOpportunities);
+      }
+
+      // Sort by profit percentage and confidence score
+      return allOpportunities
+        .sort((a, b) => (b.profitPercentage * b.confidence) - (a.profitPercentage * a.confidence))
+        .slice(0, 20); // Top 20 opportunities
+    } finally {
+      this.isScanning = false;
+    }
+  }
+
+  private getBasePrice(tokenPair: string): number {
+    // Return realistic base prices for common token pairs
+    const prices: { [key: string]: number } = {
+      'BTC/USDT': 45000 + Math.random() * 10000,
+      'ETH/USDT': 2500 + Math.random() * 1000,
+      'ETH/USDC': 2500 + Math.random() * 1000,
+      'BTC/USDC': 45000 + Math.random() * 10000,
+      'LINK/USDT': 15 + Math.random() * 10,
+      'UNI/USDT': 8 + Math.random() * 5,
+      'MATIC/USDT': 0.8 + Math.random() * 0.5,
+      'AVAX/USDT': 35 + Math.random() * 15,
+      'USDT/USDC': 0.999 + Math.random() * 0.002,
+    };
+
+    return prices[tokenPair] || 1 + Math.random() * 100;
   }
 }
 
