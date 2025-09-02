@@ -32,6 +32,7 @@ export function TradingDashboard() {
     isLoading,
     lastUpdate,
     currentStrategy,
+    wsConnected,
     toggleEngine,
     scanOpportunities,
     executeTrade,
@@ -76,6 +77,7 @@ export function TradingDashboard() {
         <TradingHeader 
           isEngineActive={isEngineActive}
           onToggleEngine={toggleEngine}
+          wsConnected={wsConnected}
         />
 
         {/* Control Panel */}

@@ -12,9 +12,10 @@ import {
 interface TradingHeaderProps {
   isEngineActive: boolean;
   onToggleEngine: () => void;
+  wsConnected?: boolean;
 }
 
-export function TradingHeader({ isEngineActive, onToggleEngine }: TradingHeaderProps) {
+export function TradingHeader({ isEngineActive, onToggleEngine, wsConnected = false }: TradingHeaderProps) {
   return (
     <header className="glass-card p-6 mb-8">
       <div className="flex items-center justify-between">
@@ -42,9 +43,18 @@ export function TradingHeader({ isEngineActive, onToggleEngine }: TradingHeaderP
               {isEngineActive ? "ACTIVE" : "PAUSED"}
             </Badge>
             
-            <Badge variant="outline" className="neon-border">
-              <Shield className="w-3 h-3 mr-1" />
-              SIMULATION MODE
+            <Badge variant="outline" className={wsConnected ? "neon-border profit-glow" : "neon-border"}>
+              {wsConnected ? (
+                <>
+                  <Activity className="w-3 h-3 mr-1 animate-pulse" />
+                  LIVE DATA
+                </>
+              ) : (
+                <>
+                  <Shield className="w-3 h-3 mr-1" />
+                  CONNECTING...
+                </>
+              )}
             </Badge>
           </div>
           

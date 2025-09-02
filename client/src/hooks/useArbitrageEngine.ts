@@ -81,6 +81,9 @@ export function useArbitrageEngine() {
 
   // Added state for selected opportunity to manage UI state
   const [selectedOpportunity, setSelectedOpportunity] = useState<string | null>(null);
+  
+  // WebSocket connection for real-time updates
+  const [wsConnected, setWsConnected] = useState(false);
 
 
   const { toast } = useToast();
@@ -346,17 +349,105 @@ export function useArbitrageEngine() {
   };
 
 
-  // AI-driven automatic trading with continuous monitoring
+  // WebSocket connection for real-time updates
   useEffect(() => {
-    if (!isEngineActive) return;
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const wsUrl = `${protocol}//${window.location.host}/ws`;
+    
+    let ws: WebSocket;
+    let reconnectTimeout: NodeJS.Timeout;
+    
+    const connectWebSocket = () => {
+      try {
+        ws = new WebSocket(wsUrl);
+        
+        ws.onopen = () => {
+          console.log('🔌 WebSocket connected for real-time updates');
+          setWsConnected(true);
+        };
+        
+        ws.onmessage = (event) => {
+          try {
+            const message = JSON.parse(event.data);
+            
+            switch (message.type) {
+              case 'opportunities':
+                // Update opportunities in real-time
+                setOpportunities(message.data.opportunities || []);
+                setAiRecommendation(message.data.aiRecommendation);
+                setCurrentStrategy(message.data.strategy || 'arbitrage');
+                setLastUpdate(new Date());
+                
+                // Update stats
+                setTradingStats(prev => ({
+                  ...prev,
+                  totalOpportunities: message.data.opportunities?.length || 0,
+                  activeArbitrage: message.data.opportunities?.filter((o: ArbitrageOpportunity) => o.status === 'executing').length || 0,
+                }));
+                break;
+                
+              case 'portfolio':
+                // Update portfolio stats in real-time
+                setTradingStats(prev => ({
+                  ...prev,
+                  profitToday: message.data.portfolio.totalProfit,
+                  successRate: message.data.portfolio.successRate,
+                  totalVolume: message.data.portfolio.totalVolume || prev.totalVolume,
+                  avgProfitPercent: message.data.portfolio.avgProfitPercent || prev.avgProfitPercent
+                }));
+                break;
+                
+              case 'connection':
+                console.log('WebSocket connection confirmed');
+                break;
+            }
+          } catch (error) {
+            console.error('Error parsing WebSocket message:', error);
+          }
+        };
+        
+        ws.onclose = () => {
+          console.log('🔌 WebSocket disconnected, attempting reconnect...');
+          setWsConnected(false);
+          
+          // Reconnect after 5 seconds
+          reconnectTimeout = setTimeout(connectWebSocket, 5000);
+        };
+        
+        ws.onerror = (error) => {
+          console.error('WebSocket error:', error);
+          setWsConnected(false);
+        };
+        
+      } catch (error) {
+        console.error('Failed to connect WebSocket:', error);
+        reconnectTimeout = setTimeout(connectWebSocket, 5000);
+      }
+    };
+    
+    connectWebSocket();
+    
+    return () => {
+      if (ws) {
+        ws.close();
+      }
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+      }
+    };
+  }, []);
+
+  // Fallback polling when WebSocket is not connected (less frequent)
+  useEffect(() => {
+    if (!isEngineActive || wsConnected) return;
 
     const interval = setInterval(() => {
       scanOpportunities();
       getPortfolioStatus();
-    }, 5000); // Refresh every 5 seconds for aggressive AI auto-execution
+    }, 10000); // Slower fallback polling every 10 seconds
 
     return () => clearInterval(interval);
-  }, [isEngineActive, scanOpportunities, getPortfolioStatus]);
+  }, [isEngineActive, wsConnected, scanOpportunities, getPortfolioStatus]);
 
   // Log execution status for monitoring
   useEffect(() => {
@@ -387,6 +478,7 @@ export function useArbitrageEngine() {
     lastUpdate,
     currentStrategy,
     selectedOpportunity, // Expose selectedOpportunity
+    wsConnected, // Expose WebSocket connection status
 
     // Actions
     toggleEngine,

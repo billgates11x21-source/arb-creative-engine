@@ -1,5 +1,6 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
+import { WebSocketServer, WebSocket } from 'ws';
 import { storage } from "./storage";
 import { db } from "./db";
 import { seedDatabase } from "./seed";
@@ -16,6 +17,9 @@ import {
   type RiskSettings
 } from "@shared/schema";
 import { eq, gte, desc, and } from "drizzle-orm";
+
+// Global WebSocket connections tracking
+let wsConnections: WebSocket[] = [];
 
 export async function registerRoutes(app: Express): Promise<Server> {
   
@@ -68,7 +72,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   const httpServer = createServer(app);
+  
+  // Setup WebSocket server for real-time updates
+  const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
+  
+  wss.on('connection', (ws) => {
+    console.log('🔌 WebSocket client connected');
+    wsConnections.push(ws);
+    
+    // Send initial data
+    sendRealTimeUpdate('connection', { status: 'connected', timestamp: new Date().toISOString() });
+    
+    ws.on('close', () => {
+      console.log('🔌 WebSocket client disconnected');
+      wsConnections = wsConnections.filter(conn => conn !== ws);
+    });
+    
+    ws.on('error', (error) => {
+      console.error('WebSocket error:', error);
+      wsConnections = wsConnections.filter(conn => conn !== ws);
+    });
+  });
+  
   return httpServer;
+}
+
+// Real-time WebSocket broadcasting function
+function sendRealTimeUpdate(type: string, data: any) {
+  const message = JSON.stringify({ type, data, timestamp: new Date().toISOString() });
+  
+  wsConnections.forEach(ws => {
+    if (ws.readyState === WebSocket.OPEN) {
+      try {
+        ws.send(message);
+      } catch (error) {
+        console.error('Error sending WebSocket message:', error);
+      }
+    }
+  });
+  
+  // Clean up closed connections
+  wsConnections = wsConnections.filter(ws => ws.readyState === WebSocket.OPEN);
 }
 
 async function scanArbitrageOpportunities(req: any, res: any) {
@@ -116,7 +160,7 @@ async function scanArbitrageOpportunities(req: any, res: any) {
   await db.delete(tradingOpportunities).where(
     and(
       eq(tradingOpportunities.status, 'discovered'),
-      gte(new Date(), tradingOpportunities.expiresAt)
+      gte(tradingOpportunities.expiresAt, new Date())
     )
   );
 
@@ -233,7 +277,7 @@ async function scanArbitrageOpportunities(req: any, res: any) {
   // Get AI strategy recommendation
   const aiRecommendation = await callAIStrategySelector(storedOpportunities);
 
-  return res.json({
+  const responseData = {
     opportunities: storedOpportunities,
     totalFound: storedOpportunities.length,
     highProfitCount: storedOpportunities.filter(o => o.profit_percentage > 2).length,
@@ -242,7 +286,12 @@ async function scanArbitrageOpportunities(req: any, res: any) {
     strategy: strategyUsed,
     aiRecommendation,
     scanTimestamp: new Date().toISOString()
-  });
+  };
+
+  // Broadcast real-time updates to all connected clients
+  sendRealTimeUpdate('opportunities', responseData);
+
+  return res.json(responseData);
 }
 
 async function executeTrade(req: any, res: any, tradeData: any) {
@@ -321,7 +370,7 @@ async function getPortfolioStatus(req: any, res: any) {
   const successfulTrades = todayTrades.filter(t => t.status === 'confirmed').length;
   const totalTrades = todayTrades.length;
 
-  return res.json({
+  const portfolioData = {
     portfolio: {
       totalProfit,
       tradesCount: totalTrades,
@@ -331,7 +380,12 @@ async function getPortfolioStatus(req: any, res: any) {
     },
     recentTrades: todayTrades.slice(0, 10),
     timestamp: new Date().toISOString()
-  });
+  };
+
+  // Broadcast real-time portfolio updates
+  sendRealTimeUpdate('portfolio', portfolioData);
+
+  return res.json(portfolioData);
 }
 
 async function updateRiskSettings(req: any, res: any, settings: any) {
