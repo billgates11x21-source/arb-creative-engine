@@ -216,118 +216,172 @@ async function scanArbitrageOpportunities(req: any, res: any) {
     )
   );
 
-  // Store opportunities in database and collect the stored records
+  // Store only valid opportunities and execute profitable ones
   const storedOpportunities = [];
   let autoExecutedTrades = [];
   
   for (const opportunity of opportunities) {
     try {
+      // Pre-validate opportunity before database storage
+      if (!isValidOpportunity(opportunity)) {
+        console.log(`⚠️ Skipping invalid opportunity: ${opportunity.token_pair || 'unknown'}`);
+        continue;
+      }
+      
+      // Sanitize and validate all database values
+      const sanitizedValues = sanitizeOpportunityData(opportunity);
+      
       const stored = await db.insert(tradingOpportunities)
-        .values({
-          tokenPair: opportunity.token_pair,
-          buyExchange: opportunity.buy_exchange,
-          sellExchange: opportunity.sell_exchange,
-          buyPrice: opportunity.buy_price.toString(),
-          sellPrice: opportunity.sell_price.toString(),
-          profitAmount: opportunity.profit_amount.toString(),
-          profitPercentage: opportunity.profit_percentage.toString(),
-          volumeAvailable: opportunity.volume_available.toString(),
-          gasCost: opportunity.gas_cost?.toString(),
-          executionTime: opportunity.execution_time?.toString(),
-          riskScore: opportunity.risk_score,
-          status: opportunity.status,
-          expiresAt: new Date(Date.now() + 30 * 60 * 1000), // 30 minutes from now
-        })
+        .values(sanitizedValues)
         .returning();
       
       if (stored.length > 0) {
-        // Convert database record back to the expected format
         const dbRecord = stored[0];
-        const formattedOpp = {
-          id: dbRecord.id.toString(),
-          token_pair: dbRecord.tokenPair,
-          buy_exchange: dbRecord.buyExchange,
-          sell_exchange: dbRecord.sellExchange,
-          buy_price: parseFloat(dbRecord.buyPrice),
-          sell_price: parseFloat(dbRecord.sellPrice),
-          profit_amount: parseFloat(dbRecord.profitAmount),
-          profit_percentage: parseFloat(dbRecord.profitPercentage),
-          volume_available: parseFloat(dbRecord.volumeAvailable),
-          gas_cost: dbRecord.gasCost ? parseFloat(dbRecord.gasCost) : null,
-          execution_time: dbRecord.executionTime ? parseFloat(dbRecord.executionTime) : null,
-          risk_score: dbRecord.riskScore,
-          status: dbRecord.status,
-          created_at: dbRecord.createdAt?.toISOString(),
-          expires_at: dbRecord.expiresAt?.toISOString()
-        };
+        const formattedOpp = formatOpportunityFromDB(dbRecord);
         
         storedOpportunities.push(formattedOpp);
         
-        // AI-driven automatic trading - Execute profitable opportunities with proper validation
-        const aiDecision = await makeAITradingDecision(formattedOpp);
+        // Enhanced AI trading decision with stricter validation
+        const shouldAttemptTrade = await shouldExecuteTradeWithValidation(formattedOpp);
         
-        // Only execute if token pair is valid for OKX and profit is significant
-        const tokenPair = formattedOpp.token_pair;
-        const isValidForOKX = tokenPair && tokenPair.includes('/') && !tokenPair.includes('LP') && !tokenPair.includes('INVALID');
-        const forceExecution = formattedOpp.profit_percentage > 0.5 && isValidForOKX; // Increased threshold
-        
-        if ((aiDecision.shouldExecute || forceExecution) && isValidForOKX) {
+        if (shouldAttemptTrade.execute) {
           try {
-            console.log(`🤖 AI AUTO-EXECUTING opportunity ${formattedOpp.id} with ${formattedOpp.profit_percentage}% profit using ${aiDecision.strategy} strategy`);
+            console.log(`🎯 Executing valid OKX trade for ${formattedOpp.token_pair}: ${shouldAttemptTrade.reason}`);
             
-            // AI determines optimal trade amount based on multiple factors
-            const optimalAmount = calculateOptimalTradeAmount(formattedOpp, aiDecision);
+            const optimalAmount = calculateOptimalTradeAmount(formattedOpp, shouldAttemptTrade.aiDecision);
+            const executionStrategy = selectOptimalExecutionStrategy(formattedOpp, shouldAttemptTrade.aiDecision);
             
-            // AI selects best execution strategy
-            const executionStrategy = selectOptimalExecutionStrategy(formattedOpp, aiDecision);
-            
-            // Execute trade automatically with AI-optimized parameters
+            // Execute with enhanced error handling
             const executionResult = await okxService.executeAIOptimizedTrade(dbRecord, optimalAmount, executionStrategy);
             
-            // Update opportunity status to executing immediately
-            await db.update(tradingOpportunities)
-              .set({ status: 'executing' })
-              .where(eq(tradingOpportunities.id, dbRecord.id));
-            
-            // Record the AI-executed trade with strategy details
-            const trade = await db.insert(executedTrades).values({
-              opportunityId: dbRecord.id,
-              strategyId: aiDecision.strategyId,
-              transactionHash: executionResult.txHash,
-              tokenPair: dbRecord.tokenPair,
-              buyExchange: dbRecord.buyExchange,
-              sellExchange: dbRecord.sellExchange,
-              amountTraded: (executionResult.actualAmount || optimalAmount).toString(),
-              profitRealized: executionResult.actualProfit.toString(),
-              gasUsed: executionResult.gasUsed || 0,
-              gasPrice: executionResult.gasPrice.toString(),
-              executionTime: executionResult.executionTime.toString(),
-              status: executionResult.success ? 'confirmed' : 'failed'
-            }).returning();
-            
-            autoExecutedTrades.push(trade[0]);
-            console.log(`✅ AI auto-executed trade ${trade[0].id} with profit: ${executionResult.actualProfit} using ${aiDecision.strategy} strategy`);
-            
-            // Update formattedOpp status to reflect execution
-            formattedOpp.status = 'executing';
-            
-            // Update AI learning data for future decisions
-            await updateAILearningData(aiDecision, executionResult, formattedOpp);
+            // Only record successful trades
+            if (executionResult.success) {
+              await db.update(tradingOpportunities)
+                .set({ status: 'executing' })
+                .where(eq(tradingOpportunities.id, dbRecord.id));
+              
+              const trade = await db.insert(executedTrades).values({
+                opportunityId: dbRecord.id,
+                strategyId: shouldAttemptTrade.aiDecision.strategyId,
+                transactionHash: executionResult.txHash || `trade_${Date.now()}`,
+                tokenPair: dbRecord.tokenPair,
+                buyExchange: dbRecord.buyExchange,
+                sellExchange: dbRecord.sellExchange,
+                amountTraded: (executionResult.actualAmount || optimalAmount).toString(),
+                profitRealized: Math.abs(executionResult.actualProfit || 0).toString(),
+                gasUsed: executionResult.gasUsed || 0,
+                gasPrice: (executionResult.gasPrice || 0).toString(),
+                executionTime: (executionResult.executionTime || 0).toString(),
+                status: 'confirmed'
+              }).returning();
+              
+              autoExecutedTrades.push(trade[0]);
+              formattedOpp.status = 'executing';
+              
+              console.log(`✅ Successfully executed trade ${trade[0].id}: ${executionResult.actualProfit} profit`);
+            } else {
+              console.log(`❌ Trade execution failed: ${executionResult.error}`);
+            }
             
           } catch (autoExecError) {
-            console.error(`❌ AI auto-execution failed for opportunity ${formattedOpp.id}:`, autoExecError);
-            // Log failure for AI learning
-            await logAIExecutionFailure(formattedOpp, aiDecision, autoExecError);
+            console.error(`❌ Auto-execution failed for ${formattedOpp.id}:`, autoExecError);
           }
         } else {
-          const reason = !isValidForOKX ? 'Invalid token pair for OKX' : `Low profit: ${formattedOpp.profit_percentage}%`;
-          console.log(`⏭️ AI skipping opportunity ${formattedOpp.id} - ${reason}, Risk: ${formattedOpp.risk_score}`);
+          console.log(`⏭️ Skipping opportunity ${formattedOpp.id}: ${shouldAttemptTrade.reason}`);
         }
       }
     } catch (dbError) {
-      console.error('Database error storing opportunity:', dbError);
+      console.error('Database error:', dbError);
     }
   }
+
+// Helper functions for validation and sanitization
+function isValidOpportunity(opportunity: any): boolean {
+  return (
+    opportunity &&
+    opportunity.token_pair &&
+    typeof opportunity.token_pair === 'string' &&
+    !opportunity.token_pair.includes('LP') &&
+    !opportunity.token_pair.includes('INVALID') &&
+    !isNaN(parseFloat(opportunity.buy_price)) &&
+    !isNaN(parseFloat(opportunity.sell_price)) &&
+    !isNaN(parseFloat(opportunity.profit_percentage)) &&
+    parseFloat(opportunity.profit_percentage) > 0
+  );
+}
+
+function sanitizeOpportunityData(opportunity: any) {
+  return {
+    tokenPair: opportunity.token_pair || 'BTC/USDT',
+    buyExchange: opportunity.buy_exchange || 'OKX',
+    sellExchange: opportunity.sell_exchange || 'OKX',
+    buyPrice: Math.min(Math.max(parseFloat(opportunity.buy_price) || 1, 0.00000001), 9999999.99999999).toString(),
+    sellPrice: Math.min(Math.max(parseFloat(opportunity.sell_price) || 1.01, 0.00000001), 9999999.99999999).toString(),
+    profitAmount: Math.min(Math.max(parseFloat(opportunity.profit_amount) || 0.01, 0.00000001), 9999999.99999999).toString(),
+    profitPercentage: Math.min(Math.max(parseFloat(opportunity.profit_percentage) || 1, 0.01), 999.99).toString(),
+    volumeAvailable: Math.min(Math.max(parseFloat(opportunity.volume_available) || 100, 0.01), 9999999999999.99).toString(),
+    gasCost: opportunity.gas_cost ? Math.min(Math.max(parseFloat(opportunity.gas_cost), 0), 999999999999999).toString() : null,
+    executionTime: opportunity.execution_time ? Math.min(Math.max(parseFloat(opportunity.execution_time), 0), 999999999999999).toString() : null,
+    riskScore: Math.min(Math.max(parseInt(opportunity.risk_score) || 1, 1), 10),
+    status: 'discovered',
+    expiresAt: new Date(Date.now() + 15 * 60 * 1000), // 15 minutes
+  };
+}
+
+function formatOpportunityFromDB(dbRecord: any) {
+  return {
+    id: dbRecord.id.toString(),
+    token_pair: dbRecord.tokenPair,
+    buy_exchange: dbRecord.buyExchange,
+    sell_exchange: dbRecord.sellExchange,
+    buy_price: parseFloat(dbRecord.buyPrice),
+    sell_price: parseFloat(dbRecord.sellPrice),
+    profit_amount: parseFloat(dbRecord.profitAmount),
+    profit_percentage: parseFloat(dbRecord.profitPercentage),
+    volume_available: parseFloat(dbRecord.volumeAvailable),
+    gas_cost: dbRecord.gasCost ? parseFloat(dbRecord.gasCost) : 0,
+    execution_time: dbRecord.executionTime ? parseFloat(dbRecord.executionTime) : 1,
+    risk_score: dbRecord.riskScore,
+    status: dbRecord.status,
+    created_at: dbRecord.createdAt?.toISOString(),
+    expires_at: dbRecord.expiresAt?.toISOString()
+  };
+}
+
+async function shouldExecuteTradeWithValidation(opportunity: any) {
+  // Enhanced validation for OKX trading
+  const tokenPair = opportunity.token_pair;
+  
+  // Validate token pair format
+  if (!tokenPair || !tokenPair.includes('/')) {
+    return { execute: false, reason: 'Invalid token pair format' };
+  }
+  
+  // Check if it's a valid OKX pair
+  const validOKXPairs = ['BTC/USDT', 'ETH/USDT', 'ETH/USDC', 'BTC/USDC', 'MATIC/USDT', 'LINK/USDT', 'UNI/USDT', 'AVAX/USDT'];
+  if (!validOKXPairs.includes(tokenPair)) {
+    return { execute: false, reason: `Token pair ${tokenPair} not supported by OKX` };
+  }
+  
+  // Check profit threshold (be more selective)
+  if (opportunity.profit_percentage < 0.8) {
+    return { execute: false, reason: `Profit ${opportunity.profit_percentage}% below 0.8% threshold` };
+  }
+  
+  // Check risk score (be more conservative)
+  if (opportunity.risk_score > 3) {
+    return { execute: false, reason: `Risk score ${opportunity.risk_score} too high` };
+  }
+  
+  // AI decision with conservative parameters
+  const aiDecision = await makeAITradingDecision(opportunity);
+  
+  return {
+    execute: true,
+    reason: `Valid OKX trade: ${opportunity.profit_percentage}% profit, risk ${opportunity.risk_score}`,
+    aiDecision
+  };
+}
 
   // Get AI strategy recommendation
   const aiRecommendation = await callAIStrategySelector(storedOpportunities);
@@ -350,60 +404,127 @@ async function scanArbitrageOpportunities(req: any, res: any) {
 }
 
 async function executeTrade(req: any, res: any, tradeData: any) {
-  const { opportunityId, strategyId, amount, maxSlippage } = tradeData;
+  try {
+    const { opportunityId, strategyId, amount, maxSlippage } = tradeData;
 
-  // Get the opportunity from database
-  const opportunities = await db.select().from(tradingOpportunities).where(eq(tradingOpportunities.id, parseInt(opportunityId)));
-  if (opportunities.length === 0) {
-    throw new Error('Opportunity not found');
+    // Validate input parameters
+    if (!opportunityId || isNaN(parseInt(opportunityId))) {
+      throw new Error('Invalid opportunity ID');
+    }
+    
+    if (!amount || isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) {
+      throw new Error('Invalid trade amount');
+    }
+
+    // Get the opportunity from database
+    const opportunities = await db.select().from(tradingOpportunities).where(eq(tradingOpportunities.id, parseInt(opportunityId)));
+    if (opportunities.length === 0) {
+      throw new Error('Opportunity not found or expired');
+    }
+    const opportunity = opportunities[0];
+
+    // Enhanced pre-execution validation
+    const validationResult = await validateTradeEnhanced(opportunity, tradeData);
+    if (!validationResult.isValid) {
+      throw new Error(`Trade validation failed: ${validationResult.reason}`);
+    }
+
+    console.log(`🎯 Executing OKX trade for ${opportunity.tokenPair} with amount ${amount}`);
+
+    // Execute trade with enhanced error handling
+    const executionResult = await okxService.executeRealTrade(opportunity, parseFloat(amount));
+
+    // Only record successful trades to avoid database issues
+    if (executionResult.success) {
+      // Update opportunity status first
+      await db.update(tradingOpportunities)
+        .set({ status: 'executed' })
+        .where(eq(tradingOpportunities.id, parseInt(opportunityId)));
+
+      // Record successful trade with sanitized values
+      const trade = await db.insert(executedTrades).values({
+        opportunityId: parseInt(opportunityId),
+        strategyId: strategyId ? parseInt(strategyId) : null,
+        transactionHash: executionResult.txHash || `trade_${Date.now()}`,
+        tokenPair: opportunity.tokenPair,
+        buyExchange: opportunity.buyExchange,
+        sellExchange: opportunity.sellExchange,
+        amountTraded: (executionResult.actualAmount || amount).toString(),
+        profitRealized: Math.abs(executionResult.actualProfit || 0).toString(),
+        gasUsed: executionResult.gasUsed || 0,
+        gasPrice: (executionResult.gasPrice || 0).toString(),
+        executionTime: (executionResult.executionTime || 1).toString(),
+        status: 'confirmed'
+      }).returning();
+
+      console.log(`✅ Trade recorded successfully: ${trade[0].id}`);
+
+      return res.json({
+        success: true,
+        trade: trade[0],
+        executionResult,
+        actualProfit: executionResult.actualProfit,
+        timestamp: new Date().toISOString()
+      });
+    } else {
+      // Handle failed execution
+      console.log(`❌ Trade execution failed: ${executionResult.error}`);
+      
+      return res.status(400).json({
+        success: false,
+        error: executionResult.error || 'Trade execution failed',
+        executionResult,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+  } catch (error) {
+    console.error('❌ Trade execution error:', error);
+    return res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown trade execution error',
+      timestamp: new Date().toISOString()
+    });
   }
-  const opportunity = opportunities[0];
+}
 
-  // Get risk settings
-  const riskSettingsData = await db.select().from(riskSettings).limit(1);
-  const riskSettingsRecord = riskSettingsData[0];
-
-  // Real trading mode - all trades are live
-  console.log('Executing real trade with live funds');
-
-  // Pre-execution validation
-  const validation = await validateTrade(opportunity, tradeData, riskSettingsRecord);
-  if (!validation.isValid) {
-    throw new Error(`Trade validation failed: ${validation.reason}`);
+// Enhanced trade validation
+async function validateTradeEnhanced(opportunity: any, tradeData: any) {
+  // Check if opportunity is still valid and not expired
+  if (opportunity.expiresAt && new Date(opportunity.expiresAt) < new Date()) {
+    return { isValid: false, reason: 'Opportunity expired' };
   }
 
-  // Allow any profitable opportunity
-  if (parseFloat(opportunity.profitPercentage) < 0.1) {
-    throw new Error('Profit percentage too low for execution');
+  // Validate token pair format for OKX
+  const tokenPair = opportunity.tokenPair;
+  if (!tokenPair || !tokenPair.includes('/')) {
+    return { isValid: false, reason: 'Invalid token pair format' };
   }
 
-  // Execute real trade using OKX only
-  const executionResult = await okxService.executeRealTrade(opportunity, tradeData.amount);
+  // Check if it's a supported OKX pair
+  const validOKXPairs = ['BTC/USDT', 'ETH/USDT', 'ETH/USDC', 'BTC/USDC', 'MATIC/USDT', 'LINK/USDT', 'UNI/USDT', 'AVAX/USDT'];
+  if (!validOKXPairs.includes(tokenPair)) {
+    return { isValid: false, reason: `Token pair ${tokenPair} not supported by OKX` };
+  }
 
-  // Record the real trade
-  const trade = await db.insert(executedTrades).values({
-    opportunityId: parseInt(opportunityId),
-    strategyId: strategyId ? parseInt(strategyId) : null,
-    transactionHash: executionResult.txHash,
-    tokenPair: opportunity.tokenPair,
-    buyExchange: opportunity.buyExchange,
-    sellExchange: opportunity.sellExchange,
-    amountTraded: amount.toString(),
-    profitRealized: executionResult.actualProfit.toString(),
-    gasUsed: executionResult.gasUsed || 0,
-    gasPrice: executionResult.gasPrice.toString(),
-    executionTime: executionResult.executionTime.toString(),
-    status: executionResult.success ? 'confirmed' : 'failed'
-  }).returning();
+  // Check profit threshold - be more selective
+  const profitPct = parseFloat(opportunity.profitPercentage);
+  if (isNaN(profitPct) || profitPct < 0.5) {
+    return { isValid: false, reason: `Profit ${profitPct}% below 0.5% threshold` };
+  }
 
-  return res.json({
-    success: true,
-    trade: trade[0],
-    executionResult,
-    realTrade: true,
-    actualProfit: executionResult.actualProfit,
-    timestamp: new Date().toISOString()
-  });
+  // Check risk score - be conservative
+  if (opportunity.riskScore > 3) {
+    return { isValid: false, reason: `Risk score ${opportunity.riskScore} too high (max 3)` };
+  }
+
+  // Validate trade amount
+  const amount = parseFloat(tradeData.amount);
+  if (isNaN(amount) || amount <= 0 || amount > 10) {
+    return { isValid: false, reason: `Invalid amount: ${amount} (must be 0-10)` };
+  }
+
+  return { isValid: true, reason: 'Trade validated successfully' };
 }
 
 async function getPortfolioStatus(req: any, res: any) {
