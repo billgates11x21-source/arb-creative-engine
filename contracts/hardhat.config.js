@@ -1,8 +1,8 @@
 
-require("@nomiclabs/hardhat-ethers");
-require("@nomiclabs/hardhat-etherscan");
+import "@nomicfoundation/hardhat-ethers";
+import "@nomicfoundation/hardhat-verify";
 
-module.exports = {
+export default {
   solidity: {
     version: "0.8.19",
     settings: {

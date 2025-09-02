@@ -44,9 +44,36 @@ class FlashLoanService {
                 validKey = '0x' + validKey;
             }
 
-            // Base network configuration
-            const BASE_RPC_URL = "https://mainnet.base.org";
-            const provider = new ethers.JsonRpcProvider(BASE_RPC_URL);
+            // Base network configuration with fallback providers
+            const BASE_RPC_URLS = [
+                "https://mainnet.base.org",
+                "https://base-rpc.publicnode.com",
+                "https://1rpc.io/base"
+            ];
+            
+            // Try providers until one works
+            let provider = null;
+            let workingRpcUrl = null;
+            
+            for (const rpcUrl of BASE_RPC_URLS) {
+                try {
+                    const testProvider = new ethers.JsonRpcProvider(rpcUrl);
+                    // Test the connection with a simple call
+                    await testProvider.getBlockNumber();
+                    provider = testProvider;
+                    workingRpcUrl = rpcUrl;
+                    console.log(`✅ Connected to Base RPC: ${rpcUrl}`);
+                    break;
+                } catch (error) {
+                    console.log(`❌ Failed to connect to ${rpcUrl}, trying next...`);
+                }
+            }
+            
+            if (!provider) {
+                console.log("⚠️ All RPC providers failed - running in simulation mode");
+                this.isInitialized = false;
+                return false;
+            }
             const signer = new ethers.Wallet(validKey, provider);
 
             console.log("📋 Flash loan wallet:", signer.address);
@@ -167,15 +194,24 @@ class FlashLoanService {
                             const routeA = this.encodeRoute(dexA.name, [pair.tokenA, pair.tokenB]);
                             const routeB = this.encodeRoute(dexB.name, [pair.tokenB, pair.tokenA]);
 
-                            const [estimatedProfit, isProfitable] = await this.contract!.calculatePotentialProfit(
-                                pair.tokenA,
-                                pair.tokenB,
-                                flashLoanAmount,
+                            let estimatedProfit, isProfitable;
+                            try {
+                                [estimatedProfit, isProfitable] = await this.contract!.calculatePotentialProfit(
+                                    pair.tokenA,
+                                    pair.tokenB,
+                                    flashLoanAmount,
                                 dexA.router,
                                 dexB.router,
                                 routeA,
                                 routeB
                             );
+                            } catch (error: any) {
+                                if (error.info?.error?.code === -32016 || error.message?.includes('rate limit')) {
+                                    console.log('⏳ Rate limited - skipping opportunity');
+                                    continue;
+                                }
+                                throw error;
+                            }
 
                             if (isProfitable && estimatedProfit > 0) {
                                 const profitETH = ethers.formatEther(estimatedProfit);

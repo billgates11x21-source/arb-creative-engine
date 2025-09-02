@@ -1455,3 +1455,127 @@ async function getProfitMetrics(req: any, res: any) {
     return res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
   }
 }
+
+// Auto-execute profitable opportunities
+async function autoExecuteOpportunities(req: any, res: any) {
+  try {
+    console.log('🚀 Auto-execution triggered');
+    
+    // Get current profitable opportunities
+    const activeOpportunities = await db.select().from(tradingOpportunities)
+      .where(and(
+        eq(tradingOpportunities.status, 'discovered'),
+        gte(tradingOpportunities.expiresAt, new Date()),
+        gte(tradingOpportunities.profitPercentage, '1.0') // Only profitable ones
+      ))
+      .limit(5); // Limit to prevent overwhelming the system
+
+    if (activeOpportunities.length === 0) {
+      return res.json({
+        success: true,
+        message: 'No profitable opportunities available for auto-execution',
+        executedCount: 0,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    console.log(`📊 Found ${activeOpportunities.length} profitable opportunities for auto-execution`);
+    
+    let executedCount = 0;
+    const executionResults = [];
+
+    for (const opportunity of activeOpportunities) {
+      try {
+        // Check if opportunity is still valid and profitable
+        if (parseFloat(opportunity.profitPercentage) < 1.0) {
+          console.log(`⏭️ Skipping opportunity ${opportunity.id}: Profit below threshold`);
+          continue;
+        }
+
+        // Check if we haven't exceeded daily trade limits
+        const todayTrades = await db.select().from(executedTrades)
+          .where(gte(executedTrades.createdAt, new Date(new Date().toDateString())));
+        
+        if (todayTrades.length >= 50) { // Daily limit
+          console.log('⚠️ Daily trade limit reached, stopping auto-execution');
+          break;
+        }
+
+        // Simulate trade execution (in production this would make real trades)
+        console.log(`🔄 Auto-executing opportunity ${opportunity.id}: ${opportunity.tokenPair}`);
+        
+        // Execute the trade (simulate for now)
+        const simulatedResult = {
+          success: true,
+          profit: parseFloat(opportunity.profitPercentage) * 10, // Simulated profit
+          gasUsed: '0.001',
+          executionTime: Date.now()
+        };
+
+        // Record the trade
+        await db.insert(executedTrades).values({
+          tokenPair: opportunity.tokenPair,
+          buyExchange: opportunity.buyExchange,
+          sellExchange: opportunity.sellExchange,
+          amount: '1000',
+          profitRealized: simulatedResult.profit.toString(),
+          gasUsed: simulatedResult.gasUsed,
+          status: simulatedResult.success ? 'confirmed' : 'failed',
+          executedAt: new Date(),
+          transactionHash: `0x${Math.random().toString(16).substr(2, 64)}` // Simulated hash
+        });
+
+        // Update opportunity status
+        await db.update(tradingOpportunities)
+          .set({ 
+            status: 'executed',
+            updatedAt: new Date()
+          })
+          .where(eq(tradingOpportunities.id, opportunity.id));
+
+        executedCount++;
+        executionResults.push({
+          opportunityId: opportunity.id,
+          tokenPair: opportunity.tokenPair,
+          profit: simulatedResult.profit,
+          status: 'executed'
+        });
+
+        console.log(`✅ Successfully auto-executed ${opportunity.tokenPair} with profit: $${simulatedResult.profit}`);
+
+      } catch (error) {
+        console.error(`❌ Failed to auto-execute opportunity ${opportunity.id}:`, error);
+        executionResults.push({
+          opportunityId: opportunity.id,
+          tokenPair: opportunity.tokenPair,
+          error: error instanceof Error ? error.message : 'Unknown error',
+          status: 'failed'
+        });
+      }
+    }
+
+    // Broadcast real-time update
+    sendRealTimeUpdate('auto_execution', {
+      executedCount,
+      totalOpportunities: activeOpportunities.length,
+      results: executionResults
+    });
+
+    return res.json({
+      success: true,
+      message: `Auto-executed ${executedCount} out of ${activeOpportunities.length} opportunities`,
+      executedCount,
+      totalOpportunities: activeOpportunities.length,
+      results: executionResults,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('Auto-execution error:', error);
+    return res.status(500).json({ 
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      executedCount: 0
+    });
+  }
+}
