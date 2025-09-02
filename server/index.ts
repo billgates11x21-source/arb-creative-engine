@@ -3,7 +3,7 @@ import { registerRoutes } from "./routes";
 import { backgroundEngine } from "./background-engine";
 import { setupVite, serveStatic, log } from "./vite";
 import { okxService } from './okx-service';
-import { flashLoanService } from "./services/flashLoanService";
+import { flashLoanService } from "./flashloan-service";
 
 const app = express();
 app.use(express.json());

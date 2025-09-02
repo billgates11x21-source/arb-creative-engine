@@ -154,20 +154,22 @@ export class FlashLoanExamples {
     const profitPct = parseFloat(opportunity.profit_percentage) || 0.33;
     const riskScore = parseInt(opportunity.risk_score) || 1;
     
-    // Conservative leverage calculation
-    let baseLeverage = 50; // Start with 50x leverage
+    // Aggressive leverage calculation for maximum profit
+    let baseLeverage = 500; // Start with 500x leverage
     
     // Adjust based on profit percentage
-    if (profitPct >= 1.0) baseLeverage = 100; // Higher leverage for better spreads
-    else if (profitPct >= 0.5) baseLeverage = 75;
-    else if (profitPct >= 0.33) baseLeverage = 50;
+    if (profitPct >= 2.0) baseLeverage = 2000; // 2000x for high spreads
+    else if (profitPct >= 1.0) baseLeverage = 1500; // 1500x for good spreads
+    else if (profitPct >= 0.5) baseLeverage = 1000; // 1000x for decent spreads
+    else if (profitPct >= 0.33) baseLeverage = 500; // 500x for minimum spreads
     
-    // Risk adjustment
-    if (riskScore <= 1) baseLeverage *= 1.2; // Increase for low risk
-    else if (riskScore >= 3) baseLeverage *= 0.8; // Decrease for high risk
+    // Risk adjustment (flash loans are atomic, so risk is lower)
+    if (riskScore <= 1) baseLeverage *= 1.5; // Increase for low risk
+    else if (riskScore <= 2) baseLeverage *= 1.2; // Slight increase for medium risk
+    else if (riskScore >= 3) baseLeverage *= 0.9; // Slight decrease for high risk
     
-    // Cap leverage to reasonable limits
-    return Math.min(baseLeverage, 200); // Max 200x leverage
+    // Much higher leverage limits for flash loans (atomic execution reduces risk)
+    return Math.min(baseLeverage, 5000); // Max 5000x leverage ($100,000 with $20)
   }
   
   // Get deployment cost estimate
@@ -315,8 +317,8 @@ export async function executeExampleFlashLoanTrade(): Promise<any> {
   
   // Flash loan calculations with $20 starting capital
   const initialCapital = 20; // $20 USDT
-  const leverage = 100; // 100x leverage possible with flash loans
-  const flashLoanAmount = initialCapital * leverage; // $2,000 USDT borrowed
+  const leverage = 1500; // 1500x leverage possible with flash loans (0.33% spread)
+  const flashLoanAmount = initialCapital * leverage; // $30,000 USDT borrowed
   
   // Profit calculations
   const grossProfit = flashLoanAmount * (exampleOpportunity.profit_percentage / 100);
@@ -326,14 +328,14 @@ export async function executeExampleFlashLoanTrade(): Promise<any> {
   const roi = (netProfit / initialCapital) * 100;
   
   console.log("📊 EXECUTION BREAKDOWN:");
-  console.log(`1. Borrow $${flashLoanAmount} USDT via Balancer flash loan (0% fee)`);
+  console.log(`1. Borrow $${flashLoanAmount.toLocaleString()} USDT via Balancer flash loan (0% fee)`);
   console.log(`2. Buy ETH on Aerodrome at $${exampleOpportunity.buy_price}`);
-  console.log(`   → Get ${(flashLoanAmount / exampleOpportunity.buy_price).toFixed(6)} ETH`);
+  console.log(`   → Get ${(flashLoanAmount / exampleOpportunity.buy_price).toFixed(4)} ETH`);
   console.log(`3. Sell ETH on Uniswap V3 at $${exampleOpportunity.sell_price}`);
-  console.log(`   → Get $${(flashLoanAmount / exampleOpportunity.buy_price * exampleOpportunity.sell_price).toFixed(2)} USDC`);
-  console.log(`4. Repay flash loan: $${flashLoanAmount} USDT`);
+  console.log(`   → Get $${(flashLoanAmount / exampleOpportunity.buy_price * exampleOpportunity.sell_price).toLocaleString()} USDC`);
+  console.log(`4. Repay flash loan: $${flashLoanAmount.toLocaleString()} USDT`);
   console.log(`5. Pay gas fees: $${gasCost} USD`);
-  console.log(`6. Keep profit: $${netProfit.toFixed(4)} USDT`);
+  console.log(`6. Keep profit: $${netProfit.toFixed(2)} USDT`);
   console.log();
   
   console.log("💡 PROFIT ANALYSIS:");
