@@ -167,12 +167,15 @@ async function scanArbitrageOpportunities(req: any, res: any) {
         
         storedOpportunities.push(formattedOpp);
         
-        // AI-driven automatic trading with intelligent decision making
+        // AI-driven automatic trading - Execute ALL profitable opportunities
         const aiDecision = await makeAITradingDecision(formattedOpp);
         
-        if (aiDecision.shouldExecute) {
+        // Force execution for any opportunity with profit > 0.1%
+        const forceExecution = formattedOpp.profit_percentage > 0.1;
+        
+        if (aiDecision.shouldExecute || forceExecution) {
           try {
-            console.log(`AI recommends auto-executing opportunity ${formattedOpp.id} with ${formattedOpp.profit_percentage}% profit using ${aiDecision.strategy} strategy`);
+            console.log(`🤖 AI AUTO-EXECUTING opportunity ${formattedOpp.id} with ${formattedOpp.profit_percentage}% profit using ${aiDecision.strategy} strategy`);
             
             // AI determines optimal trade amount based on multiple factors
             const optimalAmount = calculateOptimalTradeAmount(formattedOpp, aiDecision);
@@ -182,6 +185,11 @@ async function scanArbitrageOpportunities(req: any, res: any) {
             
             // Execute trade automatically with AI-optimized parameters
             const executionResult = await okxService.executeAIOptimizedTrade(dbRecord, optimalAmount, executionStrategy);
+            
+            // Update opportunity status to executing immediately
+            await db.update(tradingOpportunities)
+              .set({ status: 'executing' })
+              .where(eq(tradingOpportunities.id, dbRecord.id));
             
             // Record the AI-executed trade with strategy details
             const trade = await db.insert(executedTrades).values({
@@ -200,16 +208,21 @@ async function scanArbitrageOpportunities(req: any, res: any) {
             }).returning();
             
             autoExecutedTrades.push(trade[0]);
-            console.log(`AI auto-executed trade ${trade[0].id} with profit: ${executionResult.actualProfit} using ${aiDecision.strategy} strategy`);
+            console.log(`✅ AI auto-executed trade ${trade[0].id} with profit: ${executionResult.actualProfit} using ${aiDecision.strategy} strategy`);
+            
+            // Update formattedOpp status to reflect execution
+            formattedOpp.status = 'executing';
             
             // Update AI learning data for future decisions
             await updateAILearningData(aiDecision, executionResult, formattedOpp);
             
           } catch (autoExecError) {
-            console.error(`AI auto-execution failed for opportunity ${formattedOpp.id}:`, autoExecError);
+            console.error(`❌ AI auto-execution failed for opportunity ${formattedOpp.id}:`, autoExecError);
             // Log failure for AI learning
             await logAIExecutionFailure(formattedOpp, aiDecision, autoExecError);
           }
+        } else {
+          console.log(`⏭️ AI skipping opportunity ${formattedOpp.id} - Profit: ${formattedOpp.profit_percentage}%, Risk: ${formattedOpp.risk_score}`);
         }
       }
     } catch (dbError) {
@@ -499,64 +512,75 @@ function calculateRiskLevel(conditions: any): string {
   return 'LOW';
 }
 
-// AI Trading Decision Engine
+// AI Trading Decision Engine - Aggressive auto-execution
 async function makeAITradingDecision(opportunity: any): Promise<any> {
-  const profitScore = opportunity.profit_percentage * 10; // 0-100+ scale
-  const riskScore = (5 - opportunity.risk_score) * 20; // 0-100 scale (inverted)
-  const volumeScore = Math.min(opportunity.volume_available * 10, 100); // 0-100 scale
-  const timeScore = opportunity.execution_time < 5 ? 80 : 50; // Speed bonus
+  const profitScore = opportunity.profit_percentage * 20; // Increased multiplier
+  const riskScore = (5 - opportunity.risk_score) * 25; // Increased multiplier
+  const volumeScore = Math.min(opportunity.volume_available * 5, 100); // Adjusted for better scoring
+  const timeScore = opportunity.execution_time < 5 ? 90 : 70; // Higher speed bonus
   
-  // AI confidence calculation
-  const aiConfidence = (profitScore * 0.4 + riskScore * 0.3 + volumeScore * 0.2 + timeScore * 0.1);
+  // AI confidence calculation with bias toward execution
+  const aiConfidence = (profitScore * 0.5 + riskScore * 0.25 + volumeScore * 0.15 + timeScore * 0.1);
   
-  // Dynamic threshold based on market conditions
-  const executionThreshold = 60; // Base threshold
+  // Lowered threshold for aggressive auto-execution
+  const executionThreshold = 25; // Much lower threshold
   
   // Strategy selection based on opportunity characteristics
   let recommendedStrategy = 'flash_loan';
   let strategyId = 1;
   
-  if (opportunity.profit_percentage > 5) {
+  if (opportunity.profit_percentage > 3) {
     recommendedStrategy = 'high_profit_arbitrage';
     strategyId = 2;
-  } else if (opportunity.execution_time > 10) {
-    recommendedStrategy = 'slow_arbitrage';
+  } else if (opportunity.profit_percentage > 1.5) {
+    recommendedStrategy = 'medium_profit_arbitrage';
     strategyId = 3;
-  } else if (opportunity.volume_available > 100) {
+  } else if (opportunity.volume_available > 50) {
     recommendedStrategy = 'high_volume_arbitrage';
     strategyId = 4;
   }
   
+  // Auto-execute ANY profitable opportunity above minimum threshold
+  const shouldExecute = opportunity.profit_percentage > 0.1 && opportunity.risk_score <= 4;
+  
+  console.log(`AI Decision for ${opportunity.id}: Profit ${opportunity.profit_percentage}%, Risk ${opportunity.risk_score}, Confidence ${aiConfidence.toFixed(1)} - ${shouldExecute ? 'EXECUTE' : 'SKIP'}`);
+  
   return {
-    shouldExecute: aiConfidence > executionThreshold && opportunity.profit_percentage > 0.5,
-    confidence: aiConfidence,
+    shouldExecute,
+    confidence: Math.max(aiConfidence, 50), // Minimum confidence boost
     strategy: recommendedStrategy,
     strategyId,
     reasoning: `AI Score: ${aiConfidence.toFixed(1)}/100 - Profit: ${profitScore}, Risk: ${riskScore}, Volume: ${volumeScore}`,
-    executionPriority: aiConfidence > 85 ? 'HIGH' : aiConfidence > 70 ? 'MEDIUM' : 'LOW'
+    executionPriority: opportunity.profit_percentage > 2 ? 'HIGH' : opportunity.profit_percentage > 1 ? 'MEDIUM' : 'LOW'
   };
 }
 
 function calculateOptimalTradeAmount(opportunity: any, aiDecision: any): number {
-  const baseAmount = opportunity.volume_available * 0.05; // Start with 5% of available volume
+  // Start with a more aggressive base amount
+  const baseAmount = Math.min(opportunity.volume_available * 0.1, 10); // 10% of volume or max 10 tokens
   
-  // AI adjusts amount based on confidence and profit potential
-  let multiplier = 1;
+  // AI adjusts amount based on profit potential - more aggressive
+  let multiplier = 1.5; // Start higher
   
-  if (aiDecision.confidence > 90) multiplier = 2.0;
-  else if (aiDecision.confidence > 80) multiplier = 1.5;
-  else if (aiDecision.confidence > 70) multiplier = 1.2;
+  // Profit-based multipliers - execute larger amounts for better profits
+  if (opportunity.profit_percentage > 5) multiplier = 3.0;
+  else if (opportunity.profit_percentage > 3) multiplier = 2.5;
+  else if (opportunity.profit_percentage > 1.5) multiplier = 2.0;
+  else if (opportunity.profit_percentage > 0.5) multiplier = 1.5;
   
-  // Risk adjustment
-  if (opportunity.risk_score <= 1) multiplier *= 1.3;
-  else if (opportunity.risk_score >= 4) multiplier *= 0.7;
+  // Risk adjustment - be more aggressive with low risk
+  if (opportunity.risk_score <= 1) multiplier *= 1.5;
+  else if (opportunity.risk_score <= 2) multiplier *= 1.2;
+  else if (opportunity.risk_score >= 4) multiplier *= 0.8;
   
-  // Profit adjustment
-  if (opportunity.profit_percentage > 5) multiplier *= 1.5;
-  else if (opportunity.profit_percentage > 3) multiplier *= 1.2;
+  // Confidence boost
+  if (aiDecision.confidence > 80) multiplier *= 1.3;
+  else if (aiDecision.confidence > 60) multiplier *= 1.1;
   
-  const optimalAmount = Math.min(baseAmount * multiplier, opportunity.volume_available * 0.2);
-  return Math.max(optimalAmount, 0.01); // Minimum viable amount
+  const optimalAmount = Math.min(baseAmount * multiplier, opportunity.volume_available * 0.3);
+  
+  // Ensure minimum trade amount for real execution
+  return Math.max(optimalAmount, 0.1); // Higher minimum for real trades
 }
 
 function selectOptimalExecutionStrategy(opportunity: any, aiDecision: any): any {

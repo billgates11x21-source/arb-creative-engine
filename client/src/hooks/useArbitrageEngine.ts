@@ -358,52 +358,19 @@ export function useArbitrageEngine() {
     return () => clearInterval(interval);
   }, [isEngineActive, scanOpportunities, getPortfolioStatus]);
 
-  // AI monitoring for immediate execution of high-profit opportunities
+  // Log execution status for monitoring
   useEffect(() => {
-    if (!isEngineActive) return;
-
-    const aggressiveInterval = setInterval(async () => {
-      try {
-        // Quick scan for immediate high-profit opportunities
-        const { data } = await apiClient.functions.invoke('trading-engine', {
-          body: { action: 'scan_opportunities' }
-        });
-
-        if (data?.opportunities) {
-          const urgentOpportunities = data.opportunities.filter((opp: ArbitrageOpportunity) => 
-            opp.profit_percentage > 3 && opp.risk_score <= 2
-          );
-
-          // Auto-execute urgent opportunities immediately
-          for (const opp of urgentOpportunities) {
-            if (opp.status === 'discovered') {
-              console.log(`AI auto-executing urgent opportunity: ${opp.id} with ${opp.profit_percentage}% profit`);
-              
-              try {
-                await apiClient.functions.invoke('trading-engine', {
-                  body: {
-                    action: 'execute_trade',
-                    data: {
-                      opportunityId: opp.id,
-                      strategyId: 'ai_urgent',
-                      amount: Math.min(opp.volume_available * 0.1, 2.0),
-                      maxSlippage: 2.5
-                    }
-                  }
-                });
-              } catch (execError) {
-                console.error('AI urgent execution failed:', execError);
-              }
-            }
-          }
-        }
-      } catch (error) {
-        console.error('AI monitoring error:', error);
+    if (opportunities.length > 0) {
+      const profitableOpps = opportunities.filter(opp => opp.profit_percentage > 0.1);
+      const executingOpps = opportunities.filter(opp => opp.status === 'executing');
+      
+      console.log(`📊 Current opportunities: ${opportunities.length} total, ${profitableOpps.length} profitable, ${executingOpps.length} executing`);
+      
+      if (profitableOpps.length > 0 && executingOpps.length === 0) {
+        console.log(`⚠️ Warning: ${profitableOpps.length} profitable opportunities found but none executing`);
       }
-    }, 3000); // Every 3 seconds for urgent opportunities
-
-    return () => clearInterval(aggressiveInterval);
-  }, [isEngineActive]);
+    }
+  }, [opportunities]);
 
   // Initial load
   useEffect(() => {
