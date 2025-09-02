@@ -17,7 +17,7 @@ export class FlashLoanExamples {
   // Example: $20 USDT with 0.33% minimum spread requirement
   async generateFlashLoanExample(): Promise<FlashLoanExample> {
     const initialBalance = 20; // $20 USDT
-    const minSpread = 0.33; // 0.33% minimum spread
+    const minSpread = 0.05; // 0.05% minimum spread
     
     console.log(`🎯 Generating flash loan example with $${initialBalance} USDT and ${minSpread}% minimum spread`);
     
@@ -151,14 +151,16 @@ export class FlashLoanExamples {
   
   // Calculate optimal leverage for flash loan
   private calculateOptimalLeverage(initialBalance: number, opportunity: any): number {
-    const profitPct = parseFloat(opportunity.profit_percentage) || 0.33;
+    const profitPct = parseFloat(opportunity.profit_percentage) || 0.05;
     const riskScore = parseInt(opportunity.risk_score) || 1;
     
-    // Aggressive leverage calculation for maximum profit
-    let baseLeverage = 500; // Start with 500x leverage
+    // Aggressive leverage calculation for maximum profit even with tiny spreads
+    let baseLeverage = 1500; // Start with 1500x leverage
     
     // Adjust based on profit percentage
-    if (profitPct >= 2.0) baseLeverage = 2000; // 2000x for high spreads
+    if (profitPct >= 0.5) baseLeverage = 3000; // 3000x for higher spreads
+    else if (profitPct >= 0.2) baseLeverage = 2000; // 2000x for medium spreads
+    else if (profitPct >= 0.05) baseLeverage = 1500; // 1500x for minimum spreads for high spreads
     else if (profitPct >= 1.0) baseLeverage = 1500; // 1500x for good spreads
     else if (profitPct >= 0.5) baseLeverage = 1000; // 1000x for decent spreads
     else if (profitPct >= 0.33) baseLeverage = 500; // 500x for minimum spreads

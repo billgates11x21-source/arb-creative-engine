@@ -361,7 +361,7 @@ class FlashLoanService {
             
             console.log(`🔍 Smart contract validation: ${profitPercentage.toFixed(3)}% profit, isProfitable: ${isProfitable}`);
             
-            return isProfitable && profitPercentage >= 0.5; // Minimum 0.5% profit
+            return isProfitable && profitPercentage >= 0.05; // Minimum 0.05% profit
             
         } catch (error) {
             console.error("Error validating arbitrage opportunity:", error);

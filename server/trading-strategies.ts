@@ -455,9 +455,9 @@ export class ArbitrageEngine {
       const crossExchangeOps = await this.scanCrossExchangeOpportunities();
 
       for (const op of crossExchangeOps) {
-        if (op.profitPercentage >= 0.008) { // 0.8% minimum for flash loans
+        if (op.profitPercentage >= 0.0005) { // 0.05% minimum for flash loans
           for (const provider of flashLoanProviders) {
-            const leveragedAmount = op.amount * 5; // 5x leverage (conservative)
+            const leveragedAmount = op.amount * 1500; // 1500x leverage for tiny spreads
             const flashLoanFee = leveragedAmount * provider.fee;
             const leveragedProfit = op.estimatedProfit * 5 - flashLoanFee;
 

@@ -516,7 +516,7 @@ class OKXService {
 
       // Validate profit opportunity with simpler criteria
       const profitPct = parseFloat(opportunity.profit_percentage) || 0;
-      if (profitPct < 0.2) { // Minimum 0.2% profit
+      if (profitPct < 0.05) { // Minimum 0.05% profit for flash loan amplification
         console.log(`❌ Profit ${profitPct}% below minimum threshold`);
         return {
           success: false,
@@ -633,19 +633,19 @@ class OKXService {
       console.log(`🤖 AI executing profitable cycle: ${tradeAmount} ${baseCurrency} (${tradeValue} ${quoteCurrency})`);
 
       // Check if opportunity qualifies for flash loan enhancement
-      const profitPct = parseFloat(opportunity.profit_percentage) || 0;
-      if (profitPct >= 1.5 && ['ETH', 'WETH'].includes(baseCurrency)) {
-        console.log(`⚡ Opportunity qualifies for flash loan enhancement: ${profitPct}%`);
+      const enhancementProfitPct = parseFloat(opportunity.profit_percentage) || 0;
+      if (enhancementProfitPct >= 0.05 && ['ETH', 'WETH', 'USDC', 'USDT'].includes(baseCurrency)) {
+        console.log(`⚡ Opportunity qualifies for flash loan enhancement: ${enhancementProfitPct}%`);
 
         try {
           const { flashLoanService } = require('./flashloan-service');
           const flashLoanResult = await flashLoanService.executeFlashLoanArbitrage({
             asset: this.getTokenAddress(baseCurrency),
-            amount: tradeAmount * 3, // 3x leverage with flash loan
+            amount: tradeAmount * 1500, // 1500x leverage with flash loan
             dexA: 'Aerodrome',
             dexB: 'Uniswap V3',
-            estimatedProfit: profitPct * tradeAmount * 3 / 100,
-            profitPercentage: profitPct,
+            estimatedProfit: enhancementProfitPct * tradeAmount * 1500 / 100,
+            profitPercentage: enhancementProfitPct,
             gasEstimate: 800000
           });
 
@@ -655,7 +655,7 @@ class OKXService {
               success: true,
               txHash: flashLoanResult.txHash,
               actualProfit: flashLoanResult.actualProfit,
-              actualAmount: tradeAmount * 3,
+              actualAmount: tradeAmount * 1500,
               gasUsed: flashLoanResult.gasUsed,
               gasPrice: 0,
               executionTime: 8.0,

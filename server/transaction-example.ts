@@ -1,4 +1,3 @@
-
 import { flashLoanExamples } from './flashloan-examples';
 
 interface TransactionStep {
@@ -14,7 +13,7 @@ interface TransactionStep {
 }
 
 export class FlashLoanTransactionExample {
-  
+
   async generateDetailedTransaction(): Promise<{
     overview: any;
     steps: TransactionStep[];
@@ -22,20 +21,21 @@ export class FlashLoanTransactionExample {
   }> {
     console.log("🎯 FLASH LOAN ARBITRAGE - DETAILED TRANSACTION EXAMPLE");
     console.log("=" * 70);
-    
+
     const startTime = Date.now();
-    
+
     // Initial parameters
     const initialBalance = 20; // $20 USDT starting capital
-    const spreadPercentage = 0.33; // 0.33% minimum spread
+    const spreadPercentage = 0.05; // 0.05% minimum spread
     const leverage = 1500; // 1500x leverage via flash loan
     const flashLoanAmount = initialBalance * leverage; // $30,000 USDT
-    
+
     // Market prices (example opportunity)
     const ethBuyPrice = 2800.00; // ETH price on Aerodrome DEX
-    const ethSellPrice = 2809.24; // ETH price on Uniswap V3 (0.33% higher)
+    // To achieve a 0.05% spread, the sell price needs to be slightly higher
+    const ethSellPrice = ethBuyPrice * (1 + spreadPercentage / 100); // ETH price on Uniswap V3 (0.05% higher)
     const ethAmount = flashLoanAmount / ethBuyPrice; // Amount of ETH to trade
-    
+
     const overview = {
       initialCapital: `$${initialBalance} USDT`,
       flashLoanAmount: `$${flashLoanAmount.toLocaleString()} USDT`,
@@ -49,12 +49,12 @@ export class FlashLoanTransactionExample {
         sellPrice: `$${ethSellPrice}`
       }
     };
-    
+
     // Transaction steps
     const steps: TransactionStep[] = [];
     let currentBalance = initialBalance;
     let gasUsedTotal = 0;
-    
+
     // Step 1: Initiate Flash Loan
     steps.push({
       step: 1,
@@ -68,7 +68,7 @@ export class FlashLoanTransactionExample {
     });
     gasUsedTotal += 150000;
     currentBalance += flashLoanAmount;
-    
+
     // Step 2: Buy ETH on Aerodrome
     steps.push({
       step: 2,
@@ -83,7 +83,7 @@ export class FlashLoanTransactionExample {
     });
     gasUsedTotal += 200000;
     currentBalance = currentBalance - flashLoanAmount; // Spent USDT, received ETH
-    
+
     // Step 3: Sell ETH on Uniswap V3
     const usdcReceived = ethAmount * ethSellPrice;
     steps.push({
@@ -99,7 +99,7 @@ export class FlashLoanTransactionExample {
     });
     gasUsedTotal += 250000;
     currentBalance += usdcReceived;
-    
+
     // Step 4: Repay Flash Loan
     steps.push({
       step: 4,
@@ -113,14 +113,14 @@ export class FlashLoanTransactionExample {
     });
     gasUsedTotal += 100000;
     currentBalance -= flashLoanAmount;
-    
+
     // Step 5: Final Profit Calculation
     const grossProfit = usdcReceived - flashLoanAmount;
     const gasPrice = 0.001; // 0.001 gwei on Base
     const gasCostUSD = (gasUsedTotal * gasPrice * 2800) / 1e9; // ETH price * gas
     const netProfit = grossProfit - gasCostUSD;
     const finalBalance = initialBalance + netProfit;
-    
+
     steps.push({
       step: 5,
       action: "Transaction Complete - Profit Realized",
@@ -131,7 +131,7 @@ export class FlashLoanTransactionExample {
       gasUsed: 0,
       timestamp: new Date(startTime + 8000).toISOString()
     });
-    
+
     const summary = {
       execution: {
         totalTime: "8 seconds",
@@ -144,29 +144,32 @@ export class FlashLoanTransactionExample {
         grossProfit: `$${grossProfit.toFixed(4)} USDT`,
         netProfit: `$${netProfit.toFixed(4)} USDT`,
         roi: `${((finalBalance - initialBalance) / initialBalance * 100).toFixed(2)}%`,
+        // Adjust profit multiplier to reflect the new spread
         profitMultiplier: `${(netProfit / (initialBalance * spreadPercentage / 100)).toFixed(1)}x vs regular trade`
       },
       fees: {
         flashLoanFee: "$0 (Balancer has 0% fee)",
-        dexFees: `$${(flashLoanAmount * 0.0005 * 2).toFixed(2)} (0.05% each DEX)`,
+        // DEX fees need to be recalculated based on the new spread and trade amounts
+        dexFees: `$${(flashLoanAmount * spreadPercentage / 100 * 2).toFixed(4)} (approx. ${spreadPercentage}% each DEX)`,
         gasFees: `$${gasCostUSD.toFixed(6)}`,
-        totalFees: `$${(flashLoanAmount * 0.001 + gasCostUSD).toFixed(4)}`
+        // Total fees will also be affected by the DEX fees
+        totalFees: `$${(flashLoanAmount * spreadPercentage / 100 * 2 + gasCostUSD).toFixed(4)}`
       }
     };
-    
+
     return { overview, steps, summary };
   }
-  
+
   async printDetailedExample(): Promise<void> {
     const { overview, steps, summary } = await this.generateDetailedTransaction();
-    
+
     console.log("\n📋 TRANSACTION OVERVIEW:");
     console.log(`Initial Capital: ${overview.initialCapital}`);
     console.log(`Flash Loan: ${overview.flashLoanAmount} (${overview.leverage})`);
     console.log(`Opportunity: ${overview.opportunity.pair} spread of ${overview.opportunity.spread}`);
     console.log(`Buy: ${overview.opportunity.buyPrice} on ${overview.opportunity.buyExchange}`);
     console.log(`Sell: ${overview.opportunity.sellPrice} on ${overview.opportunity.sellExchange}`);
-    
+
     console.log("\n⚡ STEP-BY-STEP EXECUTION:");
     steps.forEach(step => {
       console.log(`\nStep ${step.step}: ${step.action}`);
@@ -177,12 +180,12 @@ export class FlashLoanTransactionExample {
       if (step.gasUsed) console.log(`   Gas Used: ${step.gasUsed.toLocaleString()}`);
       console.log(`   Time: ${new Date(step.timestamp).toLocaleTimeString()}`);
     });
-    
+
     console.log("\n📊 EXECUTION SUMMARY:");
     console.log(`Total Time: ${summary.execution.totalTime}`);
     console.log(`Total Gas: ${summary.execution.totalGasUsed}`);
     console.log(`Gas Cost: ${summary.execution.gasCostUSD}`);
-    
+
     console.log("\n💰 FINANCIAL RESULTS:");
     console.log(`Initial Balance: ${summary.financial.initialBalance}`);
     console.log(`Final Balance: ${summary.financial.finalBalance}`);
@@ -190,57 +193,60 @@ export class FlashLoanTransactionExample {
     console.log(`Net Profit: ${summary.financial.netProfit}`);
     console.log(`ROI: ${summary.financial.roi}`);
     console.log(`Profit Multiplier: ${summary.financial.profitMultiplier}`);
-    
+
     console.log("\n💸 FEE BREAKDOWN:");
     console.log(`Flash Loan Fee: ${summary.fees.flashLoanFee}`);
     console.log(`DEX Fees: ${summary.fees.dexFees}`);
     console.log(`Gas Fees: ${summary.fees.gasFees}`);
     console.log(`Total Fees: ${summary.fees.totalFees}`);
-    
+
     console.log("\n🎊 RESULT: Successful arbitrage trade!");
     console.log(`   Turned $20 into $${parseFloat(summary.financial.finalBalance.replace('$', '').replace(' USDT', '')).toFixed(2)}`);
     console.log(`   Profit of $${parseFloat(summary.financial.netProfit.replace('$', '').replace(' USDT', '')).toFixed(2)} in 8 seconds`);
   }
-  
+
   // Real example with current market data
   async generateRealMarketExample(): Promise<any> {
     // This would use real market data from DEXes
     // For demo, using realistic values based on Base network DEXes
-    
+
     const realExample = {
       timestamp: new Date().toISOString(),
       network: "Base Mainnet",
       initialBalance: 20, // $20 USDT
-      
+
       opportunity: {
         detected: "ETH/USDC arbitrage opportunity",
         dexA: "Aerodrome Finance",
         dexB: "Uniswap V3",
         ethPriceA: 2801.50, // Lower price
-        ethPriceB: 2810.75, // Higher price (0.33% spread)
-        spread: 0.33,
+        // Update ethPriceB to reflect the new spread
+        ethPriceB: 2801.50 * (1 + 0.05 / 100), // Higher price (0.05% spread)
+        spread: 0.05,
         liquidityA: "$2.1M",
         liquidityB: "$8.4M"
       },
-      
+
       flashLoan: {
         provider: "Balancer Vault",
         amount: 30000, // $30k USDT (1500x leverage)
         fee: "0%",
         gasEstimate: 750000
       },
-      
+
       execution: {
         ethBought: 10.7085, // 30000 / 2801.50
-        usdcReceived: 30099.14, // 10.7085 * 2810.75
-        grossProfit: 99.14,
+        // Recalculate USDC received based on the new sell price
+        usdcReceived: 10.7085 * (2801.50 * (1 + 0.05 / 100)),
+        // Recalculate profits based on new usdcReceived
+        grossProfit: (10.7085 * (2801.50 * (1 + 0.05 / 100))) - 30000,
         gasCost: 0.002,
-        netProfit: 99.138,
-        newBalance: 119.138,
-        roi: 495.69 // %
+        netProfit: (10.7085 * (2801.50 * (1 + 0.05 / 100))) - 30000 - 0.002,
+        newBalance: 20 + ((10.7085 * (2801.50 * (1 + 0.05 / 100))) - 30000 - 0.002),
+        roi: (((10.7085 * (2801.50 * (1 + 0.05 / 100))) - 30000 - 0.002) / 20) * 100 // %
       }
     };
-    
+
     return realExample;
   }
 }
@@ -251,8 +257,8 @@ export const transactionExample = new FlashLoanTransactionExample();
 export async function showFlashLoanExample(): Promise<void> {
   console.log("🚀 FLASH LOAN ARBITRAGE TRANSACTION EXAMPLE");
   console.log("Starting Amount: $20 USDT");
-  console.log("Target Spread: 0.33% minimum");
+  console.log("Target Spread: 0.05% minimum");
   console.log("="* 60);
-  
+
   await transactionExample.printDetailedExample();
 }

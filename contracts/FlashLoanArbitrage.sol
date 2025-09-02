@@ -120,7 +120,7 @@ contract FlashLoanArbitrage is Ownable, ReentrancyGuard {
     mapping(address => uint256) public minTradeAmounts;
     
     uint256 public maxSlippage = 300; // 3%
-    uint256 public minProfitBps = 50; // 0.5%
+    uint256 public minProfitBps = 5; // 0.05%
     uint256 public totalProfit;
     uint256 public totalTrades;
     
