@@ -13,9 +13,10 @@ interface TradingHeaderProps {
   isEngineActive: boolean;
   onToggleEngine: () => void;
   wsConnected?: boolean;
+  dexCount?: number;
 }
 
-export function TradingHeader({ isEngineActive, onToggleEngine, wsConnected = false }: TradingHeaderProps) {
+export function TradingHeader({ isEngineActive, onToggleEngine, wsConnected = false, dexCount }: TradingHeaderProps) {
   return (
     <header className="glass-card p-6 mb-8">
       <div className="flex items-center justify-between">
@@ -32,7 +33,7 @@ export function TradingHeader({ isEngineActive, onToggleEngine, wsConnected = fa
             </p>
           </div>
         </div>
-        
+
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-3">
             <Badge 
@@ -42,7 +43,7 @@ export function TradingHeader({ isEngineActive, onToggleEngine, wsConnected = fa
               <Activity className="w-3 h-3 mr-1" />
               {isEngineActive ? "ACTIVE" : "PAUSED"}
             </Badge>
-            
+
             <Badge variant="outline" className={wsConnected ? "neon-border profit-glow" : "neon-border"}>
               {wsConnected ? (
                 <>
@@ -57,7 +58,7 @@ export function TradingHeader({ isEngineActive, onToggleEngine, wsConnected = fa
               )}
             </Badge>
           </div>
-          
+
           <div className="flex gap-2">
             <Button
               variant="outline"
@@ -66,7 +67,7 @@ export function TradingHeader({ isEngineActive, onToggleEngine, wsConnected = fa
             >
               <Settings className="w-4 h-4" />
             </Button>
-            
+
             <Button
               variant={isEngineActive ? "destructive" : "default"}
               size="sm"
@@ -79,7 +80,7 @@ export function TradingHeader({ isEngineActive, onToggleEngine, wsConnected = fa
           </div>
         </div>
       </div>
-      
+
       <div className="mt-6 grid grid-cols-4 gap-4">
         <div className="text-center">
           <p className="text-xs text-muted-foreground uppercase tracking-wide">
@@ -91,7 +92,7 @@ export function TradingHeader({ isEngineActive, onToggleEngine, wsConnected = fa
           <p className="text-xs text-muted-foreground uppercase tracking-wide">
             DEX Connections
           </p>
-          <p className="text-lg font-semibold text-neon-green">8/8</p>
+          <p className="text-lg font-semibold text-neon-green">{dexCount ? `${dexCount}/88` : '8/8'}</p>
         </div>
         <div className="text-center">
           <p className="text-xs text-muted-foreground uppercase tracking-wide">

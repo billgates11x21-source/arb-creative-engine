@@ -78,6 +78,7 @@ export function TradingDashboard() {
           isEngineActive={isEngineActive}
           onToggleEngine={toggleEngine}
           wsConnected={wsConnected}
+          dexCount={opportunities.length > 0 ? 88 : 0}
         />
 
         {/* Control Panel */}

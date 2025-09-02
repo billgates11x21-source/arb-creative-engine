@@ -912,6 +912,7 @@ async function scanAllStrategiesComprehensive(req: any, res: any) {
       opportunities: allOpportunities,
       strategies: TRADING_STRATEGIES,
       totalDexes: getAllActiveDEXes().length,
+      activeDexes: getAllActiveDEXes().length,
       timestamp: new Date().toISOString()
     });
   } catch (error) {
