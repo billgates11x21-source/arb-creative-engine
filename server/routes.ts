@@ -167,15 +167,13 @@ async function scanArbitrageOpportunities(req: any, res: any) {
         
         storedOpportunities.push(formattedOpp);
         
-        // Auto-execute high-profit opportunities (>1.5% and low risk) - always execute real trades
-        if (formattedOpp.profit_percentage > 1.5 && formattedOpp.risk_score <= 2) {
+        // Auto-execute profitable opportunities (>1% and low risk) with available balance
+        if (formattedOpp.profit_percentage > 1.0 && formattedOpp.risk_score <= 3) {
           try {
             console.log(`Auto-executing opportunity ${formattedOpp.id} with ${formattedOpp.profit_percentage}% profit`);
             
-            // Execute trade automatically with small amount
-            const tradeAmount = Math.min(formattedOpp.volume_available * 0.1, 0.5);
-            const strategyId = formattedOpp.id.startsWith('momentum-') ? 'trending_momentum' : 
-                            formattedOpp.id.startsWith('yield-') ? 'yield_farming' : 'flash_loan';
+            // Execute trade automatically with very small amount to test
+            const tradeAmount = Math.min(formattedOpp.volume_available * 0.01, 0.1);
             
             const executionResult = await okxService.executeRealTrade(dbRecord, tradeAmount);
             
@@ -187,7 +185,7 @@ async function scanArbitrageOpportunities(req: any, res: any) {
               tokenPair: dbRecord.tokenPair,
               buyExchange: dbRecord.buyExchange,
               sellExchange: dbRecord.sellExchange,
-              amountTraded: tradeAmount.toString(),
+              amountTraded: (executionResult.actualAmount || tradeAmount).toString(),
               profitRealized: executionResult.actualProfit.toString(),
               gasUsed: executionResult.gasUsed || 0,
               gasPrice: executionResult.gasPrice.toString(),
@@ -200,6 +198,7 @@ async function scanArbitrageOpportunities(req: any, res: any) {
             
           } catch (autoExecError) {
             console.error(`Auto-execution failed for opportunity ${formattedOpp.id}:`, autoExecError);
+            // Continue processing other opportunities
           }
         }
       }
@@ -237,8 +236,8 @@ async function executeTrade(req: any, res: any, tradeData: any) {
   const riskSettingsData = await db.select().from(riskSettings).limit(1);
   const riskSettingsRecord = riskSettingsData[0];
 
-  // Force real trading mode - ignore any simulation flags
-  console.log('Executing real trade - simulation mode bypassed');
+  // Real trading mode - all trades are live
+  console.log('Executing real trade with live funds');
 
   // Pre-execution validation
   const validation = await validateTrade(opportunity, tradeData, riskSettingsRecord);
@@ -246,9 +245,9 @@ async function executeTrade(req: any, res: any, tradeData: any) {
     throw new Error(`Trade validation failed: ${validation.reason}`);
   }
 
-  // Ensure minimum profit threshold for real trades
-  if (parseFloat(opportunity.profitPercentage) < 0.5) {
-    throw new Error('Profit percentage too low for real trade execution');
+  // Allow any profitable opportunity
+  if (parseFloat(opportunity.profitPercentage) < 0.1) {
+    throw new Error('Profit percentage too low for execution');
   }
 
   // Execute real trade using OKX only

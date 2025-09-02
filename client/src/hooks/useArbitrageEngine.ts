@@ -291,13 +291,57 @@ export function useArbitrageEngine() {
         strategyId = 'flash_loan';
       }
 
-      // Calculate safe trade amount based on available volume
-      const safeAmount = Math.min(opportunity.volume_available * 0.1, 1.0);
+      // Use very small amounts for live trading with real money
+      const maxAmount = Math.min(opportunity.volume_available * 0.01, 1);
+      const tradeAmount = Math.max(maxAmount, 0.01); // Minimum viable trade amount
 
-      await executeTrade(opportunityId, strategyId, safeAmount);
-      setSelectedOpportunity(null);
+      const { data, error } = await apiClient.functions.invoke('trading-engine', {
+        body: {
+          action: 'execute_trade',
+          data: {
+            opportunityId,
+            strategyId,
+            amount: tradeAmount,
+            maxSlippage: 2
+          }
+        }
+      });
+
+      if (error) {
+        toast({
+          title: "Trade Execution Failed",
+          description: error.message || "An unknown error occurred.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Update opportunity status and potentially other states
+      setOpportunities(prev =>
+        prev.map(opp =>
+          opp.id === opportunityId
+            ? { ...opp, status: 'executing' }
+            : opp
+        )
+      );
+
+      toast({
+        title: "Trade Executed",
+        description: `Trade for ${tradeAmount} tokens initiated successfully.`,
+        variant: "default",
+      });
+
+      // Refresh portfolio status after trade execution
+      await getPortfolioStatus();
+
+      setSelectedOpportunity(null); // Clear selection after execution
     } catch (error) {
       console.error('Trade execution failed:', error);
+      toast({
+        title: "Trade Execution Error",
+        description: "An error occurred during trade execution.",
+        variant: "destructive",
+      });
     }
   };
 
