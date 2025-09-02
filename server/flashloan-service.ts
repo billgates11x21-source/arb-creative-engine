@@ -27,22 +27,27 @@ class FlashLoanService {
         try {
             console.log("🔧 Initializing Flash Loan Service on Base network...");
 
+            // Get private key from environment if not provided
+            const key = privateKey || process.env.PRIVATE_KEY;
+
             // Skip initialization if no valid private key provided
-            if (!privateKey || privateKey === '[REDACTED]' || privateKey.length < 32) {
+            if (!key || key === '[REDACTED]' || key.length < 32) {
                 console.log("⚠️ No valid private key provided - running in simulation mode");
+                console.log("💡 Add PRIVATE_KEY to secrets to enable real flash loan execution");
                 this.isInitialized = false;
                 return false;
             }
 
             // Validate private key format
-            if (!privateKey.startsWith('0x') && privateKey.length === 64) {
-                privateKey = '0x' + privateKey;
+            let validKey = key;
+            if (!validKey.startsWith('0x') && validKey.length === 64) {
+                validKey = '0x' + validKey;
             }
 
             // Base network configuration
             const BASE_RPC_URL = "https://mainnet.base.org";
             const provider = new ethers.JsonRpcProvider(BASE_RPC_URL);
-            const signer = new ethers.Wallet(privateKey, provider);
+            const signer = new ethers.Wallet(validKey, provider);
 
             console.log("📋 Flash loan wallet:", signer.address);
 

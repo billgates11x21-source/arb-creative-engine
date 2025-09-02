@@ -79,14 +79,31 @@ app.use((req, res, next) => {
         // Initialize Flash Loan service (will check for deployed contract and private key)
         const flashLoanInitialized = await flashLoanService.initialize(process.env.PRIVATE_KEY);
       
-      if (flashLoanInitialized) {
-        console.log('✅ Flash Loan service initialized successfully');
-        // Start flash loan integration with OKX
-        flashLoanService.integrateWithOKXTrading();
-      } else {
-        console.log('💡 Flash Loan service in simulation mode - add PRIVATE_KEY to activate');
-      }
-    } catch (error) {
+        if (flashLoanInitialized) {
+          console.log('✅ Flash Loan service initialized successfully');
+          // Start flash loan integration with OKX
+          flashLoanService.integrateWithOKXTrading();
+        } else {
+          console.log('💡 Flash Loan service in simulation mode - add PRIVATE_KEY to activate');
+        }
+
+        // Start periodic opportunity scanning and auto-execution
+        setInterval(async () => {
+          try {
+            const opportunities = await okxService.scanRealOpportunities();
+            const profitable = opportunities.filter(op => 
+              parseFloat(op.profit_percentage) >= 0.1 && op.confidence >= 70
+            );
+            
+            if (profitable.length > 0) {
+              console.log(`🔄 Found ${profitable.length} auto-executable opportunities`);
+            }
+          } catch (error) {
+            console.error('Periodic scan error:', error);
+          }
+        }, 30000); // Every 30 seconds
+
+      } catch (error) {
         console.error('⚠️ Service initialization error:', error.message);
       }
     })();

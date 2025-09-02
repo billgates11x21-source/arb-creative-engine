@@ -81,7 +81,7 @@ export function useArbitrageEngine() {
 
   // Added state for selected opportunity to manage UI state
   const [selectedOpportunity, setSelectedOpportunity] = useState<string | null>(null);
-  
+
   // WebSocket connection for real-time updates
   const [wsConnected, setWsConnected] = useState(false);
 
@@ -90,61 +90,72 @@ export function useArbitrageEngine() {
 
   // Scan for arbitrage opportunities
   const scanOpportunities = useCallback(async () => {
-    try {
-      setIsLoading(true);
+    if (isLoading) return;
 
-      const { data, error } = await apiClient.functions.invoke('trading-engine', {
-        body: {
-          action: 'scan_opportunities'
-        }
+    setIsLoading(true);
+    try {
+      const result = await apiClient.functions.invoke('trading-engine', {
+        body: { action: 'scan_opportunities' }
+      }).catch(error => {
+        console.error('API call failed:', error);
+        return { data: null, error: { message: error.message || 'Network error' } };
       });
 
-      if (error) throw error;
-
-      setOpportunities(data.opportunities || []);
-      setAiRecommendation(data.aiRecommendation);
-      setCurrentStrategy(data.strategy || 'arbitrage');
-      setLastUpdate(new Date());
-
-      // Update stats including auto-executed trades
-      setTradingStats(prev => ({
-        ...prev,
-        totalOpportunities: data.opportunities?.length || 0,
-        activeArbitrage: data.opportunities?.filter((o: ArbitrageOpportunity) => o.status === 'executing').length || 0,
-      }));
-
-      const strategyNames = {
-        arbitrage: 'Arbitrage',
-        yield_farming: 'Yield Farming',
-        lending: 'Lending',
-        trending_momentum: 'Trending Momentum',
-        mock_arbitrage: 'Mock Arbitrage'
-      };
-
-      // Show auto-execution results if any
-      if (data.autoExecutedCount > 0) {
-        toast({
-          title: "Auto-Execution Complete",
-          description: `Automatically executed ${data.autoExecutedCount} high-profit trades`,
-        });
+      if (result.error) {
+        throw new Error(result.error.message);
       }
 
-      toast({
-        title: "Opportunities Updated",
-        description: `${strategyNames[data.strategy as keyof typeof strategyNames] || data.strategy}: Found ${data.opportunities?.length || 0} opportunities`,
-      });
+      const data = result.data;
+      setOpportunities(data.opportunities || []);
+      setTradingStats(data.stats || {});
+      setLastUpdate(new Date());
+
+      // Log opportunities summary
+      const profitable = data.opportunities?.filter((op: any) => parseFloat(op.profit_percentage) > 0) || [];
+      const executing = data.opportunities?.filter((op: any) => op.status === 'executing') || [];
+
+      console.log(`📊 Current opportunities: ${data.opportunities?.length || 0} total, ${profitable.length} profitable, ${executing.length} executing`);
+
+      // Auto-execute if profitable opportunities exist and none are executing
+      if (profitable.length > 0 && executing.length === 0 && isEngineActive) {
+        console.log(`🚀 Triggering auto-execution for ${profitable.length} opportunities`);
+        await autoExecuteOpportunities();
+      }
 
     } catch (error) {
       console.error('Error scanning opportunities:', error);
       toast({
         title: "Scan Error",
-        description: "Failed to scan for opportunities",
+        description: `Failed to scan opportunities: ${error.message}`,
         variant: "destructive",
       });
     } finally {
       setIsLoading(false);
     }
+  }, [isLoading, toast, isEngineActive]);
+
+  const autoExecuteOpportunities = useCallback(async () => {
+    try {
+      const result = await apiClient.functions.invoke('trading-engine', {
+        body: { action: 'auto_execute_opportunities' }
+      }).catch(error => {
+        console.error('Auto-execution failed:', error);
+        return { data: null, error: { message: error.message || 'Auto-execution error' } };
+      });
+
+      if (result.data && result.data.executed > 0) {
+        console.log(`✅ Auto-executed ${result.data.executed} opportunities`);
+        toast({
+          title: "Auto-Execution",
+          description: `Executed ${result.data.executed} profitable trades`,
+          variant: "default",
+        });
+      }
+    } catch (error) {
+      console.error('Auto-execution error:', error);
+    }
   }, [toast]);
+
 
   // Execute arbitrage trade
   const executeTrade = useCallback(async (opportunityId: string, strategyId: string, amount: number) => {
@@ -353,23 +364,23 @@ export function useArbitrageEngine() {
   useEffect(() => {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const wsUrl = `${protocol}//${window.location.host}/ws`;
-    
+
     let ws: WebSocket;
     let reconnectTimeout: NodeJS.Timeout;
-    
+
     const connectWebSocket = () => {
       try {
         ws = new WebSocket(wsUrl);
-        
+
         ws.onopen = () => {
           console.log('🔌 WebSocket connected for real-time updates');
           setWsConnected(true);
         };
-        
+
         ws.onmessage = (event) => {
           try {
             const message = JSON.parse(event.data);
-            
+
             switch (message.type) {
               case 'opportunities':
                 // Update opportunities in real-time
@@ -377,7 +388,7 @@ export function useArbitrageEngine() {
                 setAiRecommendation(message.data.aiRecommendation);
                 setCurrentStrategy(message.data.strategy || 'arbitrage');
                 setLastUpdate(new Date());
-                
+
                 // Update stats
                 setTradingStats(prev => ({
                   ...prev,
@@ -385,7 +396,7 @@ export function useArbitrageEngine() {
                   activeArbitrage: message.data.opportunities?.filter((o: ArbitrageOpportunity) => o.status === 'executing').length || 0,
                 }));
                 break;
-                
+
               case 'portfolio':
                 // Update portfolio stats in real-time
                 setTradingStats(prev => ({
@@ -396,37 +407,59 @@ export function useArbitrageEngine() {
                   avgProfitPercent: message.data.portfolio.avgProfitPercent || prev.avgProfitPercent
                 }));
                 break;
-                
+
               case 'connection':
                 console.log('WebSocket connection confirmed');
                 break;
             }
           } catch (error) {
             console.error('Error parsing WebSocket message:', error);
+            toast({
+              title: "WebSocket Error",
+              description: "Failed to process incoming message.",
+              variant: "destructive",
+            });
           }
         };
-        
+
         ws.onclose = () => {
           console.log('🔌 WebSocket disconnected, attempting reconnect...');
           setWsConnected(false);
-          
+
           // Reconnect after 5 seconds
           reconnectTimeout = setTimeout(connectWebSocket, 5000);
         };
-        
+
         ws.onerror = (error) => {
           console.error('WebSocket error:', error);
           setWsConnected(false);
         };
-        
+
       } catch (error) {
         console.error('Failed to connect WebSocket:', error);
+        toast({
+          title: "WebSocket Connection Error",
+          description: "Could not establish connection.",
+          variant: "destructive",
+        });
         reconnectTimeout = setTimeout(connectWebSocket, 5000);
       }
     };
-    
+
     connectWebSocket();
-    
+
+    // Add global error handler for unhandled promise rejections
+    const handleGlobalError = (event: ErrorEvent) => {
+      console.error('Unhandled Promise Rejection:', event.message, event.reason);
+      toast({
+        title: "System Error",
+        description: `An unexpected error occurred: ${event.reason?.message || event.message}`,
+        variant: "destructive",
+      });
+    };
+    window.addEventListener('error', handleGlobalError);
+    window.addEventListener('unhandledrejection', handleGlobalError);
+
     return () => {
       if (ws) {
         ws.close();
@@ -434,8 +467,10 @@ export function useArbitrageEngine() {
       if (reconnectTimeout) {
         clearTimeout(reconnectTimeout);
       }
+      window.removeEventListener('error', handleGlobalError);
+      window.removeEventListener('unhandledrejection', handleGlobalError);
     };
-  }, []);
+  }, [toast]); // Added toast to dependencies
 
   // Fallback polling when WebSocket is not connected (less frequent)
   useEffect(() => {
@@ -454,9 +489,9 @@ export function useArbitrageEngine() {
     if (opportunities.length > 0) {
       const profitableOpps = opportunities.filter(opp => opp.profit_percentage > 0.1);
       const executingOpps = opportunities.filter(opp => opp.status === 'executing');
-      
+
       console.log(`📊 Current opportunities: ${opportunities.length} total, ${profitableOpps.length} profitable, ${executingOpps.length} executing`);
-      
+
       if (profitableOpps.length > 0 && executingOpps.length === 0) {
         console.log(`⚠️ Warning: ${profitableOpps.length} profitable opportunities found but none executing`);
       }

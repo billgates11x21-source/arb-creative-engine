@@ -114,6 +114,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         case 'get_profit_metrics':
           return await getProfitMetrics(req, res);
 
+        case 'auto_execute_opportunities':
+          return await autoExecuteOpportunities(req, res);
+
         default:
           return res.status(400).json({ error: 'Invalid action' });
       }

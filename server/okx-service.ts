@@ -130,10 +130,17 @@ class OKXService {
       clearTimeout(this.reconnectInterval);
     }
 
+    // Close existing connection first
+    if (this.ws) {
+      this.ws.removeAllListeners();
+      this.ws.close();
+      this.ws = null;
+    }
+
     this.reconnectInterval = setTimeout(() => {
       console.log('Attempting to reconnect OKX WebSocket...');
       this.connectWebSocket();
-    }, 5000); // Reconnect after 5 seconds
+    }, 3000); // Reconnect after 3 seconds
   }
 
   async getAccountBalance(): Promise<OKXBalance[]> {
