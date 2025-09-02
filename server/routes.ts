@@ -6,7 +6,8 @@ import { db } from "./db";
 import { seedDatabase } from "./seed";
 import { okxService } from "./okx-service";
 import { flashLoanService } from './flashloan-service';
-import { flashLoanExamples, executeExampleFlashLoanTrade } from './flashloan-examples';
+import { flashLoanExamples } from './flashloan-examples';
+import { transactionExample } from './transaction-example';
 import { arbitrageEngine, TRADING_STRATEGIES } from "./trading-strategies";
 import { getAllActiveDEXes, getDEXById } from "./dex-registry";
 import { riskManager } from "./risk-management";
@@ -40,16 +41,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
   await dcaEngine.initializeDCA();
 
   // Flash loan example endpoint
-  app.get('/api/flashloan-example', async (req, res) => {
+  app.get('/api/flashloan/example', async (req, res) => {
     try {
-      const example = await executeExampleFlashLoanTrade();
+      const example = await flashLoanExamples.executeExampleFlashLoanTrade();
       res.json(example);
     } catch (error) {
-      res.status(500).json({
-        success: false,
-        error: error.message,
-        message: "Flash loan example generation failed"
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get('/api/flashloan/transaction-example', async (req, res) => {
+    try {
+      const detailed = await transactionExample.generateDetailedTransaction();
+      const realMarket = await transactionExample.generateRealMarketExample();
+      res.json({
+        detailedTransaction: detailed,
+        realMarketExample: realMarket
       });
+    } catch (error) {
+      res.status(500).json({ error: error.message });
     }
   });
 

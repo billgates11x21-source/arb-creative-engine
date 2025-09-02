@@ -636,7 +636,7 @@ class OKXService {
       const profitPct = parseFloat(opportunity.profit_percentage) || 0;
       if (profitPct >= 1.5 && ['ETH', 'WETH'].includes(baseCurrency)) {
         console.log(`⚡ Opportunity qualifies for flash loan enhancement: ${profitPct}%`);
-        
+
         try {
           const { flashLoanService } = require('./flashloan-service');
           const flashLoanResult = await flashLoanService.executeFlashLoanArbitrage({
@@ -648,7 +648,7 @@ class OKXService {
             profitPercentage: profitPct,
             gasEstimate: 800000
           });
-          
+
           if (flashLoanResult.success) {
             console.log(`🚀 Flash loan arbitrage executed: ${flashLoanResult.actualProfit} ETH profit`);
             return {
@@ -850,7 +850,7 @@ class OKXService {
   }> {
     try {
       // Get real-time ticker data
-      const ticker = this.tickerData.get(tokenPair.replace('/', '-')) || 
+      const ticker = this.tickerData.get(tokenPair.replace('/', '-')) ||
                     await this.fetchSingleTicker(tokenPair);
 
       const currentPrice = parseFloat(ticker.last);
@@ -966,17 +966,16 @@ class OKXService {
   private async validateProfitOpportunity(opportunity: any, currentPrice: number): Promise<boolean> {
     const expectedBuyPrice = parseFloat(opportunity.buy_price) || currentPrice;
     const expectedSellPrice = parseFloat(opportunity.sell_price) || currentPrice;
-    const expectedProfit = expectedSellPrice - expectedBuyPrice;
-    const expectedProfitPercentage = (expectedProfit / expectedBuyPrice) * 100;
+    const profitPct = (opportunity.sell_price - opportunity.buy_price) / opportunity.buy_price * 100;
 
     // AI requires minimum 0.15% profit after fees
     const minimumProfitThreshold = 0.15;
     const estimatedFees = expectedBuyPrice * 0.002; // 0.2% total fees estimate
 
-    const profitAfterFees = expectedProfit - estimatedFees;
+    const profitAfterFees = expectedSellPrice - expectedBuyPrice - estimatedFees;
     const profitPercentageAfterFees = (profitAfterFees / expectedBuyPrice) * 100;
 
-    console.log(`🔍 AI Profit Validation: Expected ${expectedProfitPercentage.toFixed(3)}%, After fees: ${profitPercentageAfterFees.toFixed(3)}%`);
+    console.log(`🔍 AI Profit Validation: Expected ${profitPct.toFixed(3)}%, After fees: ${profitPercentageAfterFees.toFixed(3)}%`);
 
     return profitPercentageAfterFees >= minimumProfitThreshold;
   }
@@ -1047,7 +1046,7 @@ class OKXService {
       'USDC': '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
       'DAI': '0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb'
     };
-    
+
     return baseTokens[symbol.toUpperCase()] || baseTokens['USDC'];
   }
 
