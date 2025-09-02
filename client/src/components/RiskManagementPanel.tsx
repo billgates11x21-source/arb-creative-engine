@@ -348,11 +348,28 @@ export function RiskManagementPanel() {
               </div>
               
               <div className="mt-6 p-4 bg-gradient-primary/10 rounded-lg border border-primary/20">
-                <h4 className="font-semibold mb-2 text-primary">Regulatory Compliance</h4>
-                <p className="text-sm text-muted-foreground">
-                  The 80/20 allocation rule ensures compliance with Australian financial regulations 
-                  by maintaining primary focus on established cryptocurrencies (BTC/ETH) while 
-                  limiting exposure to alternative tokens.
+                <h4 className="font-semibold mb-2 text-primary">Balance Allocation Rules</h4>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">BTC/ETH Trading:</span>
+                    <span className="text-neon-cyan font-mono">80% of balance</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">BTC/ETH Fee Reserve:</span>
+                    <span className="text-neon-orange font-mono">20% of balance</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Alt Tokens Trading:</span>
+                    <span className="text-neon-purple font-mono">90% of balance</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Alt Tokens Fee Reserve:</span>
+                    <span className="text-neon-green font-mono">10% of balance</span>
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground mt-3">
+                  These rules ensure proper fee reserves while maximizing trading capital efficiency 
+                  based on token stability and transaction cost patterns.
                 </p>
               </div>
             </div>

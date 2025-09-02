@@ -735,6 +735,26 @@ export class ArbitrageEngine {
     return prices[tokenPair] || 1 + Math.random() * 100;
   }
 
+  // Balance allocation based on token type
+  private getBalanceAllocationForToken(token: string, totalBalance: number): { maxUsableBalance: number; reserveForFees: number } {
+    // Extract base token from pair (e.g., "BTC/USDT" -> "BTC")
+    const baseToken = token.split('/')[0];
+    
+    // Major tokens (BTC/ETH) - use 80% for trading, reserve 20% for fees
+    const majorTokens = ['BTC', 'ETH', 'WBTC', 'WETH'];
+    
+    if (majorTokens.includes(baseToken)) {
+      const maxUsableBalance = totalBalance * 0.80; // 80% for trading
+      const reserveForFees = totalBalance * 0.20;   // 20% for fees
+      return { maxUsableBalance, reserveForFees };
+    } else {
+      // All other tokens - use 90% for trading, reserve 10% for fees
+      const maxUsableBalance = totalBalance * 0.90; // 90% for trading
+      const reserveForFees = totalBalance * 0.10;   // 10% for fees
+      return { maxUsableBalance, reserveForFees };
+    }
+  }
+
   // This function was missing and is crucial for the updated logic in scanAllStrategiesWithValidation
   // It's a placeholder that would ideally fetch real trading volume and risk score
   private async getTradeDetails(opportunity: ArbitrageOpportunity): Promise<{ volume_available: number; risk_score: number }> {
@@ -753,25 +773,39 @@ export class ArbitrageEngine {
   }
 
   // Function to calculate optimal trade amount based on opportunity and AI decision
-  private calculateOptimalTradeAmount(opportunity: ArbitrageOpportunity, aiDecision: { confidence: number }): number {
+  private calculateOptimalTradeAmount(opportunity: ArbitrageOpportunity, aiDecision: { confidence: number }, totalBalance: number = 10000): number {
+    // Get balance allocation rules for this token
+    const allocation = this.getBalanceAllocationForToken(opportunity.token, totalBalance);
+    
     // Parse and validate volume available
-    const volumeAvailable = parseFloat(String(opportunity.liquidityScore * 10000)) || 100; // Using liquidityScore as a proxy for volume_available
+    const volumeAvailable = parseFloat(String(opportunity.liquidityScore * 10000)) || 100;
     const profitPct = parseFloat(String(opportunity.profitPercentage)) || 1;
 
-    // Start with a conservative base amount for real trading
-    const baseAmount = Math.min(volumeAvailable * 0.001, 0.5); // 0.1% of volume or max 0.5 token
+    // Base amount respecting balance allocation rules
+    const maxAllowedByBalance = allocation.maxUsableBalance * 0.01; // Use max 1% of usable balance per trade
+    const baseAmount = Math.min(volumeAvailable * 0.001, 0.5, maxAllowedByBalance);
 
     // Conservative multipliers for live trading
     let multiplier = 1.0;
 
+    // Token-specific multipliers based on allocation rules
+    const baseToken = opportunity.token.split('/')[0];
+    const isMajorToken = ['BTC', 'ETH', 'WBTC', 'WETH'].includes(baseToken);
+    
+    if (isMajorToken) {
+      multiplier *= 0.8; // More conservative with BTC/ETH due to lower allocation
+    } else {
+      multiplier *= 1.1; // Slightly more aggressive with alts due to higher allocation
+    }
+
     // Profit-based multipliers - more conservative for real money
-    if (profitPct > 5) multiplier = 1.3;
-    else if (profitPct > 3) multiplier = 1.2;
-    else if (profitPct > 1.5) multiplier = 1.1;
-    else if (profitPct > 0.5) multiplier = 1.05;
+    if (profitPct > 5) multiplier *= 1.3;
+    else if (profitPct > 3) multiplier *= 1.2;
+    else if (profitPct > 1.5) multiplier *= 1.1;
+    else if (profitPct > 0.5) multiplier *= 1.05;
 
     // Risk adjustment - be very conservative with high risk
-    const riskScore = opportunity.riskLevel || 3; // Using opportunity.riskLevel as a proxy for risk_score
+    const riskScore = opportunity.riskLevel || 3;
     if (riskScore <= 1) multiplier *= 1.1;
     else if (riskScore <= 2) multiplier *= 1.05;
     else if (riskScore >= 3) multiplier *= 0.9;
@@ -782,18 +816,20 @@ export class ArbitrageEngine {
     if (confidence > 80) multiplier *= 1.05;
     else if (confidence < 50) multiplier *= 0.9;
 
-    const optimalAmount = Math.min(baseAmount * multiplier, volumeAvailable * 0.01);
+    const optimalAmount = Math.min(baseAmount * multiplier, volumeAvailable * 0.01, maxAllowedByBalance);
 
     // Ensure valid number and respect exchange minimums
-    const finalAmount = Math.max(optimalAmount, 0.1); // Use 0.1 as safe minimum
+    const finalAmount = Math.max(optimalAmount, 0.1);
 
     // Validate the result
     if (isNaN(finalAmount) || finalAmount <= 0) {
       console.warn('Invalid calculated amount, using fallback');
-      return 0.1; // Safe fallback
+      return 0.1;
     }
 
-    return Math.round(finalAmount * 1000) / 1000; // Round to 3 decimals
+    // Final check against allocation limits
+    const maxAllowed = allocation.maxUsableBalance * 0.05; // Max 5% of usable balance per trade
+    return Math.round(Math.min(finalAmount, maxAllowed) * 1000) / 1000;
   }
 }
 

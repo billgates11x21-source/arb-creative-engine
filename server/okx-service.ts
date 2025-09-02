@@ -153,7 +153,7 @@ class OKXService {
       let opportunities = [];
 
       // Get current ticker data from WebSocket or REST API as fallback
-      const tickers = this.tickerData.size > 0 
+      const tickers = this.tickerData.size > 0
         ? Array.from(this.tickerData.values())
         : await this.fetchTickersREST();
 
@@ -241,7 +241,7 @@ class OKXService {
     const opportunities = [];
 
     // Look for lending/staking opportunities on major coins
-    const majorCoins = tickers.filter(t => 
+    const majorCoins = tickers.filter(t =>
       ['BTC-USDT', 'ETH-USDT', 'USDT-USDC'].includes(t.instId)
     );
 
@@ -515,12 +515,12 @@ class OKXService {
       const volumeAvailable = parseFloat(opportunity.volume_available) || 100;
       const maxAmount = Math.min(volumeAvailable * 0.01, 10); // Much smaller for safety
       const tradeAmount = Math.max(maxAmount, minAmount); // Use exchange minimum
-      
+
       // Validate calculated amounts
       if (isNaN(tradeAmount) || tradeAmount <= 0) {
         throw new Error(`Invalid calculated trade amount: ${tradeAmount}`);
       }
-      
+
       // Ensure trade value meets minimum requirements
       const tradeValue = tradeAmount * currentPrice;
       if (isNaN(tradeValue) || tradeValue < minCost) {
@@ -682,7 +682,7 @@ class OKXService {
     return {
       isConnected: this.isConnected,
       tickerCount: this.tickerData.size,
-      lastUpdate: this.tickerData.size > 0 ? 
+      lastUpdate: this.tickerData.size > 0 ?
         Math.max(...Array.from(this.tickerData.values()).map(t => parseInt(t.ts))) : null
     };
   }
@@ -694,6 +694,68 @@ class OKXService {
     if (this.reconnectInterval) {
       clearTimeout(this.reconnectInterval);
     }
+  }
+
+  // Get balance allocation rules for token type
+  private getTokenAllocation(tokenPair: string, totalBalance: number): { maxUsable: number; reserveForFees: number; allocationPct: number } {
+    const baseToken = tokenPair.split('/')[0];
+    const majorTokens = ['BTC', 'ETH', 'WBTC', 'WETH'];
+
+    if (majorTokens.includes(baseToken)) {
+      // BTC/ETH: 80% for trading, 20% for fees
+      return {
+        maxUsable: totalBalance * 0.80,
+        reserveForFees: totalBalance * 0.20,
+        allocationPct: 80
+      };
+    } else {
+      // All other tokens: 90% for trading, 10% for fees
+      return {
+        maxUsable: totalBalance * 0.90,
+        reserveForFees: totalBalance * 0.10,
+        allocationPct: 90
+      };
+    }
+  }
+
+  // Calculate optimal trade amount using AI and risk management with allocation rules
+  private calculateOptimalAmount(
+    opportunity: any,
+    aiDecision: { confidence: number; riskScore: number },
+    currentBalance: number,
+    tokenPair: string
+  ): number {
+    // Get allocation rules for this token type
+    const allocation = this.getTokenAllocation(tokenPair, currentBalance);
+
+    // Base calculation using allocation-aware logic
+    const baseAmount = Math.min(
+      allocation.maxUsable * 0.02, // Max 2% of usable balance per trade
+      opportunity.amount || 1,
+      allocation.maxUsable * 0.10 // Never exceed 10% of usable balance
+    );
+
+    // AI confidence multiplier (50-100% confidence)
+    const confidenceMultiplier = Math.max(0.3, Math.min(1.2, aiDecision.confidence / 100));
+
+    // Risk adjustment (lower risk = higher amount)
+    const riskMultiplier = Math.max(0.5, 1.2 - (aiDecision.riskScore / 10));
+
+    // Profit potential multiplier
+    const profitMultiplier = Math.max(0.8, Math.min(1.5, (opportunity.profitPercentage || 1) * 10));
+
+    // Token type multiplier
+    const baseToken = tokenPair.split('/')[0];
+    const isMajorToken = ['BTC', 'ETH', 'WBTC', 'WETH'].includes(baseToken);
+    const tokenMultiplier = isMajorToken ? 0.8 : 1.1; // More conservative with BTC/ETH
+
+    const calculatedAmount = baseAmount * confidenceMultiplier * riskMultiplier * profitMultiplier * tokenMultiplier;
+
+    // Final bounds checking with allocation limits
+    const maxAllowed = allocation.maxUsable * 0.05; // Max 5% of usable balance
+    const minAmount = Math.min(0.1, allocation.maxUsable * 0.001); // Minimum trade size
+
+    return Math.max(minAmount, Math.min(calculatedAmount, maxAllowed));
   }
 }
 
