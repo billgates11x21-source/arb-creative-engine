@@ -28,12 +28,12 @@ export interface EngineStatus {
 
 export class BackgroundArbitrageEngine {
   private config: BackgroundEngineConfig = {
-    scanInterval: 10000, // 10 seconds
+    scanInterval: 1000, // 1 second - MAXIMUM SPEED
     executionEnabled: true,
-    maxConcurrentScans: 3,
-    emergencyStopEnabled: true,
+    maxConcurrentScans: 10, // More concurrent scans
+    emergencyStopEnabled: false, // NO EMERGENCY STOPS
     performanceLogging: true,
-    autoRebalancing: false
+    autoRebalancing: true // Auto rebalancing for continuous profit
   };
 
   private isRunning = false;
@@ -203,8 +203,7 @@ export class BackgroundArbitrageEngine {
           console.log(`❌ Background trade failed: ${result.error}`);
         }
 
-        // Delay between trades
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        // NO DELAYS - CONTINUOUS EXECUTION FOR MAXIMUM PROFIT
         
       } catch (error) {
         console.error(`❌ Background execution error for ${opportunity.token}:`, error);

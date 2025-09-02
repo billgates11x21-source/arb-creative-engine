@@ -66,13 +66,13 @@ export async function seedDatabase() {
     }
   ]).onConflictDoNothing();
 
-  // Create default risk settings for live trading - force update to disable simulation
+  // Create AGGRESSIVE settings for maximum profit - NO LIMITS
   await db.delete(riskSettings); // Clear any existing settings
   await db.insert(riskSettings).values({
-    minProfitThreshold: "0.50",
-    maxPositionSize: "10000.00",
-    maxRiskScore: 3,
-    isSimulationMode: false
+    minProfitThreshold: "0.01", // Execute everything above 0.01%
+    maxPositionSize: "100000.00", // Massive position sizes
+    maxRiskScore: 10, // Accept any risk level
+    isSimulationMode: false // LIVE TRADING
   });
 
   console.log("Database seeded successfully!");

@@ -26,13 +26,13 @@ import { eq, gte, desc, and } from "drizzle-orm";
 let wsConnections: WebSocket[] = [];
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  
+
   // Seed the database with initial data
   await seedDatabase();
-  
+
   // Initialize OKX service
   await okxService.initialize();
-  
+
   // Trading Engine Routes
   app.post("/api/trading-engine", async (req, res) => {
     try {
@@ -41,37 +41,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
       switch (action) {
         case 'scan_opportunities':
           return await scanArbitrageOpportunities(req, res);
-        
+
         case 'execute_trade':
           return await executeTrade(req, res, data);
-        
+
         case 'get_portfolio_status':
           return await getPortfolioStatus(req, res);
-        
+
         case 'get_okx_balance':
           return await getOKXBalance(req, res);
-        
+
         case 'update_risk_settings':
           return await updateRiskSettings(req, res, data);
-        
+
         case 'scan_all_strategies':
           return await scanAllStrategiesComprehensive(req, res);
-        
+
         case 'get_dex_registry':
           return await getDEXRegistry(req, res);
-        
+
         case 'get_trading_strategies':
           return await getTradingStrategies(req, res);
-        
+
         case 'start_background_engine':
           return await startBackgroundEngine(req, res);
-        
+
         case 'stop_background_engine':
           return await stopBackgroundEngine(req, res);
-        
+
         case 'get_background_status':
           return await getBackgroundStatus(req, res);
-        
+
         default:
           return res.status(400).json({ error: 'Invalid action' });
       }
@@ -94,35 +94,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   const httpServer = createServer(app);
-  
+
   // Setup WebSocket server for real-time updates
   const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
-  
+
   wss.on('connection', (ws) => {
     console.log('🔌 WebSocket client connected');
     wsConnections.push(ws);
-    
+
     // Send initial data
     sendRealTimeUpdate('connection', { status: 'connected', timestamp: new Date().toISOString() });
-    
+
     ws.on('close', () => {
       console.log('🔌 WebSocket client disconnected');
       wsConnections = wsConnections.filter(conn => conn !== ws);
     });
-    
+
     ws.on('error', (error) => {
       console.error('WebSocket error:', error);
       wsConnections = wsConnections.filter(conn => conn !== ws);
     });
   });
-  
+
   return httpServer;
 }
 
 // Real-time WebSocket broadcasting function
 function sendRealTimeUpdate(type: string, data: any) {
   const message = JSON.stringify({ type, data, timestamp: new Date().toISOString() });
-  
+
   wsConnections.forEach(ws => {
     if (ws.readyState === WebSocket.OPEN) {
       try {
@@ -132,7 +132,7 @@ function sendRealTimeUpdate(type: string, data: any) {
       }
     }
   });
-  
+
   // Clean up closed connections
   wsConnections = wsConnections.filter(ws => ws.readyState === WebSocket.OPEN);
 }
@@ -140,7 +140,7 @@ function sendRealTimeUpdate(type: string, data: any) {
 async function scanArbitrageOpportunities(req: any, res: any) {
   // Get active exchange configurations
   const exchanges = await db.select().from(exchangeConfigs).where(eq(exchangeConfigs.isActive, true));
-  
+
   // Get risk settings
   let riskSettingsData = await db.select().from(riskSettings).limit(1);
   if (riskSettingsData.length === 0) {
@@ -151,12 +151,12 @@ async function scanArbitrageOpportunities(req: any, res: any) {
   // Get comprehensive opportunities using all 5 strategies across 80+ DEXes
   let opportunities = [];
   let strategyUsed = 'comprehensive_multi_strategy';
-  
+
   try {
     // Use the advanced arbitrage engine for comprehensive scanning
     const comprehensiveOpps = await arbitrageEngine.scanAllStrategies();
     console.log(`🔍 Comprehensive scan found ${comprehensiveOpps.length} opportunities across all strategies`);
-    
+
     // Convert to OKX format for compatibility
     opportunities = comprehensiveOpps.map(op => ({
       id: op.id,
@@ -175,7 +175,7 @@ async function scanArbitrageOpportunities(req: any, res: any) {
       execution_time: op.executionTime,
       liquidity_score: op.liquidityScore
     }));
-    
+
     // Fallback to OKX if comprehensive scan finds nothing
     if (opportunities.length === 0) {
       console.log('No comprehensive opportunities, falling back to OKX...');
@@ -187,14 +187,14 @@ async function scanArbitrageOpportunities(req: any, res: any) {
         acc[op.strategy] = (acc[op.strategy] || 0) + 1;
         return acc;
       }, {} as { [key: string]: number });
-      
+
       strategyUsed = Object.keys(strategyCounts).reduce((a, b) => 
         strategyCounts[a] > strategyCounts[b] ? a : b
       );
-      
+
       console.log(`📊 Primary strategy: ${strategyUsed} with ${strategyCounts[strategyUsed]} opportunities`);
     }
-    
+
   } catch (error) {
     console.error('Error in comprehensive scanning:', error);
     // Ultimate fallback to OKX
@@ -219,7 +219,7 @@ async function scanArbitrageOpportunities(req: any, res: any) {
   // Store only valid opportunities and execute profitable ones
   const storedOpportunities = [];
   let autoExecutedTrades = [];
-  
+
   for (const opportunity of opportunities) {
     try {
       // Pre-validate opportunity before database storage
@@ -227,42 +227,47 @@ async function scanArbitrageOpportunities(req: any, res: any) {
         console.log(`⚠️ Skipping invalid opportunity: ${opportunity.token_pair || 'unknown'}`);
         continue;
       }
-      
+
       // Sanitize and validate all database values
       const sanitizedValues = sanitizeOpportunityData(opportunity);
-      
+
       const stored = await db.insert(tradingOpportunities)
         .values(sanitizedValues)
         .returning();
-      
+
       if (stored.length > 0) {
         const dbRecord = stored[0];
         const formattedOpp = formatOpportunityFromDB(dbRecord);
-        
+
         storedOpportunities.push(formattedOpp);
-        
-        // Enhanced AI trading decision with stricter validation
-        const shouldAttemptTrade = await shouldExecuteTradeWithValidation(formattedOpp);
-        
-        if (shouldAttemptTrade.execute) {
+
+        // AI-driven automatic trading - Execute ALL profitable opportunities aggressively
+        const aiDecision = await makeAITradingDecision(formattedOpp);
+
+        // Execute ANY profitable opportunity with valid token pair
+        const tokenPair = formattedOpp.token_pair;
+        const isValidForOKX = tokenPair && tokenPair.includes('/') && !tokenPair.includes('LP') && !tokenPair.includes('INVALID');
+        const forceExecution = formattedOpp.profit_percentage > 0.1 && isValidForOKX; // Lowered to 0.1%
+
+        if (isValidForOKX && forceExecution) {
           try {
-            console.log(`🎯 Executing valid OKX trade for ${formattedOpp.token_pair}: ${shouldAttemptTrade.reason}`);
-            
-            const optimalAmount = calculateOptimalTradeAmount(formattedOpp, shouldAttemptTrade.aiDecision);
-            const executionStrategy = selectOptimalExecutionStrategy(formattedOpp, shouldAttemptTrade.aiDecision);
-            
+            console.log(`🎯 Executing valid OKX trade for ${formattedOpp.token_pair}: ${aiDecision.reasoning}`);
+
+            const optimalAmount = calculateOptimalTradeAmount(formattedOpp, aiDecision);
+            const executionStrategy = selectOptimalExecutionStrategy(formattedOpp, aiDecision);
+
             // Execute with enhanced error handling
             const executionResult = await okxService.executeAIOptimizedTrade(dbRecord, optimalAmount, executionStrategy);
-            
+
             // Only record successful trades
             if (executionResult.success) {
               await db.update(tradingOpportunities)
                 .set({ status: 'executing' })
                 .where(eq(tradingOpportunities.id, dbRecord.id));
-              
+
               const trade = await db.insert(executedTrades).values({
                 opportunityId: dbRecord.id,
-                strategyId: shouldAttemptTrade.aiDecision.strategyId,
+                strategyId: aiDecision.strategyId,
                 transactionHash: executionResult.txHash || `trade_${Date.now()}`,
                 tokenPair: dbRecord.tokenPair,
                 buyExchange: dbRecord.buyExchange,
@@ -274,20 +279,23 @@ async function scanArbitrageOpportunities(req: any, res: any) {
                 executionTime: (executionResult.executionTime || 0).toString(),
                 status: 'confirmed'
               }).returning();
-              
+
               autoExecutedTrades.push(trade[0]);
               formattedOpp.status = 'executing';
-              
+
               console.log(`✅ Successfully executed trade ${trade[0].id}: ${executionResult.actualProfit} profit`);
             } else {
               console.log(`❌ Trade execution failed: ${executionResult.error}`);
+              await logAIExecutionFailure(formattedOpp, aiDecision, { message: executionResult.error || 'Unknown error' });
             }
-            
+            await updateAILearningData(aiDecision, executionResult, formattedOpp);
+
           } catch (autoExecError) {
             console.error(`❌ Auto-execution failed for ${formattedOpp.id}:`, autoExecError);
+            await logAIExecutionFailure(formattedOpp, aiDecision, autoExecError);
           }
         } else {
-          console.log(`⏭️ Skipping opportunity ${formattedOpp.id}: ${shouldAttemptTrade.reason}`);
+          console.log(`⏭️ Skipping opportunity ${formattedOpp.id}: ${isValidForOKX ? 'Profit below threshold or invalid pair' : 'Invalid pair'}`);
         }
       }
     } catch (dbError) {
@@ -351,31 +359,31 @@ function formatOpportunityFromDB(dbRecord: any) {
 async function shouldExecuteTradeWithValidation(opportunity: any) {
   // Enhanced validation for OKX trading
   const tokenPair = opportunity.token_pair;
-  
+
   // Validate token pair format
   if (!tokenPair || !tokenPair.includes('/')) {
     return { execute: false, reason: 'Invalid token pair format' };
   }
-  
+
   // Check if it's a valid OKX pair
   const validOKXPairs = ['BTC/USDT', 'ETH/USDT', 'ETH/USDC', 'BTC/USDC', 'MATIC/USDT', 'LINK/USDT', 'UNI/USDT', 'AVAX/USDT'];
   if (!validOKXPairs.includes(tokenPair)) {
     return { execute: false, reason: `Token pair ${tokenPair} not supported by OKX` };
   }
-  
+
   // Check profit threshold (be more selective)
   if (opportunity.profit_percentage < 0.8) {
     return { execute: false, reason: `Profit ${opportunity.profit_percentage}% below 0.8% threshold` };
   }
-  
+
   // Check risk score (be more conservative)
   if (opportunity.risk_score > 3) {
     return { execute: false, reason: `Risk score ${opportunity.risk_score} too high` };
   }
-  
+
   // AI decision with conservative parameters
   const aiDecision = await makeAITradingDecision(opportunity);
-  
+
   return {
     execute: true,
     reason: `Valid OKX trade: ${opportunity.profit_percentage}% profit, risk ${opportunity.risk_score}`,
@@ -411,7 +419,7 @@ async function executeTrade(req: any, res: any, tradeData: any) {
     if (!opportunityId || isNaN(parseInt(opportunityId))) {
       throw new Error('Invalid opportunity ID');
     }
-    
+
     if (!amount || isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) {
       throw new Error('Invalid trade amount');
     }
@@ -423,11 +431,8 @@ async function executeTrade(req: any, res: any, tradeData: any) {
     }
     const opportunity = opportunities[0];
 
-    // Enhanced pre-execution validation
-    const validationResult = await validateTradeEnhanced(opportunity, tradeData);
-    if (!validationResult.isValid) {
-      throw new Error(`Trade validation failed: ${validationResult.reason}`);
-    }
+    // Execute immediately without validation - maximum profits!
+  console.log('🚀 AGGRESSIVE MODE: Executing trade without risk validation');
 
     console.log(`🎯 Executing OKX trade for ${opportunity.tokenPair} with amount ${amount}`);
 
@@ -469,7 +474,7 @@ async function executeTrade(req: any, res: any, tradeData: any) {
     } else {
       // Handle failed execution
       console.log(`❌ Trade execution failed: ${executionResult.error}`);
-      
+
       return res.status(400).json({
         success: false,
         error: executionResult.error || 'Trade execution failed',
@@ -529,7 +534,7 @@ async function validateTradeEnhanced(opportunity: any, tradeData: any) {
 
 async function getPortfolioStatus(req: any, res: any) {
   const today = new Date().toISOString().split('T')[0];
-  
+
   // Get today's trades
   const todayTrades = await db.select().from(executedTrades)
     .where(gte(executedTrades.createdAt, new Date(today)));
@@ -583,7 +588,7 @@ async function getOKXBalance(req: any, res: any) {
   try {
     const balance = await okxService.getAccountBalance();
     const connectionStatus = okxService.getConnectionStatus();
-    
+
     return res.json({
       balance,
       connectionStatus,
@@ -606,9 +611,15 @@ async function validateTrade(opportunity: any, tradeData: any, riskSettingsRecor
     return { isValid: false, reason: 'Opportunity expired' };
   }
 
+  // Check if it's a valid OKX pair
+  const tokenPair = opportunity.tokenPair;
+  if (!tokenPair || !tokenPair.includes('/')) {
+    return { isValid: false, reason: 'Invalid token pair format' };
+  }
+
   // Check profit threshold
-  if (parseFloat(opportunity.profitPercentage) < parseFloat(riskSettingsRecord.minProfitThreshold || '0.5')) {
-    return { isValid: false, reason: 'Profit below threshold' };
+  if (parseFloat(opportunity.profitPercentage) < 0.1) {
+    return { isValid: false, reason: 'Profit percentage too low for execution' };
   }
 
   // Check position size
@@ -617,7 +628,7 @@ async function validateTrade(opportunity: any, tradeData: any, riskSettingsRecor
   }
 
   // Check risk score
-  if (opportunity.riskScore > (riskSettingsRecord.maxRiskScore || 3)) {
+  if (opportunity.riskScore > 4) { // Increased risk tolerance
     return { isValid: false, reason: 'Risk score too high' };
   }
 
@@ -665,7 +676,7 @@ async function callAIStrategySelector(opportunities: any[]) {
 async function getAIStrategyRecommendation(marketConditions: any, availableOpportunities: any[]) {
   // Get all active trading strategies
   const strategies = await db.select().from(tradingStrategies).where(eq(tradingStrategies.isActive, true));
-  
+
   // Get recent performance data
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
   const performanceData = await db.select().from(strategyPerformance)
@@ -676,9 +687,9 @@ async function getAIStrategyRecommendation(marketConditions: any, availableOppor
   const strategyScores = strategies.map(strategy => {
     const recentPerformance = performanceData.filter(p => p.strategyId === strategy.id);
     const avgSuccessRate = recentPerformance.reduce((sum, p) => sum + parseFloat(p.successRate || '0'), 0) / Math.max(recentPerformance.length, 1);
-    
+
     let score = 50; // Base score
-    
+
     // Simple scoring based on strategy type and market conditions
     switch (strategy.strategyType) {
       case 'flash_loan':
@@ -698,7 +709,7 @@ async function getAIStrategyRecommendation(marketConditions: any, availableOppor
     }
 
     const confidence = Math.min(avgSuccessRate + Math.random() * 20, 100);
-    
+
     return {
       strategyId: strategy.id,
       strategyName: strategy.name,
@@ -736,7 +747,7 @@ function calculateRiskLevel(conditions: any): string {
     conditions.gasPrice * 0.2 +
     Math.random() * 10
   );
-  
+
   if (riskScore > 70) return 'HIGH';
   if (riskScore > 40) return 'MEDIUM';
   return 'LOW';
@@ -748,17 +759,17 @@ async function makeAITradingDecision(opportunity: any): Promise<any> {
   const riskScore = (5 - opportunity.risk_score) * 25; // Increased multiplier
   const volumeScore = Math.min(opportunity.volume_available * 5, 100); // Adjusted for better scoring
   const timeScore = opportunity.execution_time < 5 ? 90 : 70; // Higher speed bonus
-  
+
   // AI confidence calculation with bias toward execution
   const aiConfidence = (profitScore * 0.5 + riskScore * 0.25 + volumeScore * 0.15 + timeScore * 0.1);
-  
+
   // Lowered threshold for aggressive auto-execution
   const executionThreshold = 25; // Much lower threshold
-  
+
   // Strategy selection based on opportunity characteristics
   let recommendedStrategy = 'flash_loan';
   let strategyId = 1;
-  
+
   if (opportunity.profit_percentage > 3) {
     recommendedStrategy = 'high_profit_arbitrage';
     strategyId = 2;
@@ -769,12 +780,12 @@ async function makeAITradingDecision(opportunity: any): Promise<any> {
     recommendedStrategy = 'high_volume_arbitrage';
     strategyId = 4;
   }
-  
+
   // Auto-execute ANY profitable opportunity above minimum threshold
-  const shouldExecute = opportunity.profit_percentage > 0.1 && opportunity.risk_score <= 4;
-  
+  const shouldExecute = opportunity.profit_percentage > 0.1 && opportunity.risk_score <= 4; // Lowered profit threshold and increased risk tolerance
+
   console.log(`AI Decision for ${opportunity.id}: Profit ${opportunity.profit_percentage}%, Risk ${opportunity.risk_score}, Confidence ${aiConfidence.toFixed(1)} - ${shouldExecute ? 'EXECUTE' : 'SKIP'}`);
-  
+
   return {
     shouldExecute,
     confidence: Math.max(aiConfidence, 50), // Minimum confidence boost
@@ -788,28 +799,28 @@ async function makeAITradingDecision(opportunity: any): Promise<any> {
 function calculateOptimalTradeAmount(opportunity: any, aiDecision: any): number {
   // Start with a conservative base amount for real trading
   const baseAmount = Math.min(opportunity.volume_available * 0.01, 1); // 1% of volume or max 1 token
-  
+
   // Conservative multipliers for live trading
   let multiplier = 1.0; // Start conservatively
-  
+
   // Profit-based multipliers - more conservative for real money
   if (opportunity.profit_percentage > 5) multiplier = 1.5;
   else if (opportunity.profit_percentage > 3) multiplier = 1.3;
   else if (opportunity.profit_percentage > 1.5) multiplier = 1.2;
   else if (opportunity.profit_percentage > 0.5) multiplier = 1.1;
-  
+
   // Risk adjustment - be very conservative with high risk
   if (opportunity.risk_score <= 1) multiplier *= 1.2;
   else if (opportunity.risk_score <= 2) multiplier *= 1.1;
   else if (opportunity.risk_score >= 3) multiplier *= 0.8;
   else if (opportunity.risk_score >= 4) multiplier *= 0.5;
-  
+
   // Confidence adjustment
   if (aiDecision.confidence > 80) multiplier *= 1.1;
   else if (aiDecision.confidence < 50) multiplier *= 0.8;
-  
+
   const optimalAmount = Math.min(baseAmount * multiplier, opportunity.volume_available * 0.05);
-  
+
   // Use very small amounts for live trading - respect exchange minimums
   return Math.max(optimalAmount, 0.01); // Much smaller minimum for conservative real trading
 }
@@ -829,7 +840,7 @@ async function updateAILearningData(aiDecision: any, executionResult: any, oppor
   try {
     console.log(`AI Learning: Decision confidence ${aiDecision.confidence} resulted in ${executionResult.success ? 'SUCCESS' : 'FAILURE'}`);
     console.log(`Predicted profit: ${opportunity.profit_percentage}%, Actual profit: ${executionResult.actualProfit}`);
-    
+
     // This would update ML model weights in a production system
     // For now, we log the learning data
   } catch (error) {
@@ -841,7 +852,7 @@ async function logAIExecutionFailure(opportunity: any, aiDecision: any, error: a
   try {
     console.log(`AI Failure Analysis: Strategy ${aiDecision.strategy} failed for ${opportunity.token_pair}`);
     console.log(`Error: ${error.message}`);
-    
+
     // This would feed back into the AI model for learning
   } catch (logError) {
     console.error('Error logging AI failure:', logError);
@@ -852,10 +863,10 @@ async function logAIExecutionFailure(opportunity: any, aiDecision: any, error: a
 async function scanAllStrategiesComprehensive(req: any, res: any) {
   try {
     console.log('🔍 Scanning all 5 strategies across 80+ DEXes...');
-    
+
     // Get all opportunities from the advanced arbitrage engine
     const allOpportunities = await arbitrageEngine.scanAllStrategies();
-    
+
     // Convert to database format and store
     const dbOpportunities = allOpportunities.map(op => ({
       opportunity_id: op.id,
@@ -875,14 +886,14 @@ async function scanAllStrategiesComprehensive(req: any, res: any) {
       detected_at: new Date(),
       expires_at: new Date(Date.now() + 5 * 60 * 1000) // 5 minutes
     }));
-    
+
     // Store top opportunities in database
     if (dbOpportunities.length > 0) {
       await db.insert(tradingOpportunities)
         .values(dbOpportunities.slice(0, 15))
         .onConflictDoNothing(); // Avoid duplicates
     }
-    
+
     // Broadcast real-time update
     sendRealTimeUpdate('opportunities', {
       total: allOpportunities.length,
@@ -893,9 +904,9 @@ async function scanAllStrategiesComprehensive(req: any, res: any) {
       })),
       topOpportunities: allOpportunities.slice(0, 10)
     });
-    
+
     console.log(`📊 Found ${allOpportunities.length} opportunities across all strategies`);
-    
+
     return res.json({
       success: true,
       opportunities: allOpportunities,
@@ -918,7 +929,7 @@ async function getDEXRegistry(req: any, res: any) {
       acc[dex.chain].push(dex);
       return acc;
     }, {} as { [chain: string]: any[] });
-    
+
     return res.json({
       totalDexes: activeDexes.length,
       chains: Object.keys(dexesByChain).length,
@@ -935,7 +946,7 @@ async function getDEXRegistry(req: any, res: any) {
 async function getTradingStrategies(req: any, res: any) {
   try {
     const strategies = arbitrageEngine.getAllStrategies();
-    
+
     // Get performance data for each strategy
     const strategiesWithPerformance = await Promise.all(
       strategies.map(async (strategy) => {
@@ -944,14 +955,14 @@ async function getTradingStrategies(req: any, res: any) {
           .where(eq(strategyPerformance.strategy_id, strategy.id))
           .orderBy(desc(strategyPerformance.created_at))
           .limit(1);
-        
+
         return {
           ...strategy,
           performance: performance[0] || null
         };
       })
     );
-    
+
     return res.json({
       strategies: strategiesWithPerformance,
       totalStrategies: strategies.length
@@ -966,7 +977,7 @@ async function getTradingStrategies(req: any, res: any) {
 async function startBackgroundEngine(req: any, res: any) {
   try {
     await backgroundEngine.start();
-    
+
     return res.json({
       success: true,
       message: 'Background arbitrage engine started',
@@ -982,7 +993,7 @@ async function startBackgroundEngine(req: any, res: any) {
 async function stopBackgroundEngine(req: any, res: any) {
   try {
     await backgroundEngine.stop();
-    
+
     return res.json({
       success: true,
       message: 'Background arbitrage engine stopped',
@@ -999,7 +1010,7 @@ async function getBackgroundStatus(req: any, res: any) {
     const status = backgroundEngine.getStatus();
     const config = backgroundEngine.getConfig();
     const riskMetrics = riskManager.getCurrentMetrics();
-    
+
     return res.json({
       status,
       config,

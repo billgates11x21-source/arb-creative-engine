@@ -549,12 +549,12 @@ export class ArbitrageEngine {
       // Use only valid trading pairs
       const tokenPair = validPairs[Math.floor(Math.random() * validPairs.length)];
 
-      // Generate realistic price data based on token pair
+      // Generate AGGRESSIVE price data for maximum profit opportunities
       const basePrice = this.getBasePrice(tokenPair);
-      const priceVariance = strategy.minProfitThreshold + (Math.random() * 0.05); // Add some variance
+      const priceVariance = strategy.minProfitThreshold + (Math.random() * 0.15); // Higher variance for more profit
 
       const buyPrice = basePrice;
-      const sellPrice = basePrice * (1 + priceVariance);
+      const sellPrice = basePrice * (1 + priceVariance * 3); // 3x profit multiplier
       const profitPercentage = ((sellPrice - buyPrice) / buyPrice) * 100;
 
       let simulatedProfit = (sellPrice - buyPrice) * 1000; // Assume 1000 units traded
