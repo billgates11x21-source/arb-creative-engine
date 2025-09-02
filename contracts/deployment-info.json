@@ -1,17 +1,19 @@
 {
-  "contractAddress": "0xecd5b4c57ffb0a8c2af14946ad4164cd0dd22ddf",
-  "deploymentTx": "0xba0c360448d732f26824e9a288e40e8f59e5857f41293139c6bd33fd85c54edd",
+  "contractAddress": "0x06204A90A561a298812b8fa6F10888fb8Ba0386b",
+  "transactionHash": "0x1dfa23482728644ceb5b5d2082e3e766746ab5102729874ed17dc8016b8edea7",
   "network": "base",
   "chainId": 8453,
-  "deployedAt": "2025-09-02T15:27:40.732Z",
+  "deployedAt": "2025-09-02T16:00:14.410Z",
   "deployer": "0xF59081067B0c5e9cf17e3A6aC5eC9f0FD1eCcAD7",
-  "estimatedCost": "0.000002775339",
+  "gasUsed": "87324",
   "abi": [
-    "function executeFlashLoanArbitrage(address,address,uint256,tuple(address,address,uint256,address,address,bytes,bytes,uint256)) external",
-    "function calculatePotentialProfit(address,address,uint256,address,address,bytes,bytes) external view returns (uint256,bool)",
-    "function addAuthorizedCaller(address) external",
-    "function getContractStats() external view returns (uint256,uint256,uint256,uint256)",
-    "function emergencyWithdraw(address) external",
-    "event ArbitrageExecuted(address indexed,uint256,uint256,address indexed)"
-  ]
+    {
+      "inputs": [],
+      "name": "executeArbitrage",
+      "outputs": [],
+      "stateMutability": "payable",
+      "type": "function"
+    }
+  ],
+  "status": "deployed_successfully"
 }

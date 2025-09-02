@@ -1508,7 +1508,7 @@ async function autoExecuteOpportunities(req: any, res: any) {
         const simulatedResult = {
           success: true,
           profit: parseFloat(opportunity.profitPercentage) * 10, // Simulated profit
-          gasUsed: '0.001',
+          gasUsed: 1500000, // Integer for gas units
           executionTime: Date.now()
         };
 
@@ -1517,9 +1517,9 @@ async function autoExecuteOpportunities(req: any, res: any) {
           tokenPair: opportunity.tokenPair,
           buyExchange: opportunity.buyExchange,
           sellExchange: opportunity.sellExchange,
-          amount: '1000',
+          amountTraded: '1000',
           profitRealized: simulatedResult.profit.toString(),
-          gasUsed: simulatedResult.gasUsed,
+          gasUsed: 1500000, // Integer for gas units
           status: simulatedResult.success ? 'confirmed' : 'failed',
           executedAt: new Date(),
           transactionHash: `0x${Math.random().toString(16).substr(2, 64)}` // Simulated hash
