@@ -24,9 +24,21 @@ class FlashLoanService {
     private contract: ethers.Contract | null = null;
     private isInitialized = false;
 
-    async initialize(privateKey: string): Promise<boolean> {
+    async initialize(privateKey?: string): Promise<boolean> {
         try {
             console.log("🔧 Initializing Flash Loan Service on Base network...");
+            
+            // Skip initialization if no valid private key provided
+            if (!privateKey || privateKey === '[REDACTED]' || privateKey.length < 32) {
+                console.log("⚠️ No valid private key provided - running in simulation mode");
+                this.isInitialized = false;
+                return false;
+            }
+            
+            // Validate private key format
+            if (!privateKey.startsWith('0x') && privateKey.length === 64) {
+                privateKey = '0x' + privateKey;
+            }
             
             // Base network configuration
             const BASE_RPC_URL = "https://mainnet.base.org";
@@ -101,8 +113,8 @@ class FlashLoanService {
     
     async scanFlashLoanOpportunities(): Promise<FlashLoanOpportunity[]> {
         if (!this.isInitialized) {
-            console.log("⚠️ Flash loan service not initialized");
-            return [];
+            console.log("⚠️ Flash loan service not initialized - running simulation mode");
+            return this.generateSimulatedFlashLoanOpportunities();
         }
         
         try {
@@ -335,6 +347,55 @@ class FlashLoanService {
         if (!this.contract) return false;
         
         try {
+
+
+    private generateSimulatedFlashLoanOpportunities(): FlashLoanOpportunity[] {
+        const opportunities: FlashLoanOpportunity[] = [];
+        
+        // Generate realistic simulated opportunities for testing
+        const scenarios = [
+            {
+                asset: '0x4200000000000000000000000000000000000006', // WETH
+                amount: 5,
+                dexA: 'Aerodrome',
+                dexB: 'Uniswap V3',
+                profitPercentage: 0.12
+            },
+            {
+                asset: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', // USDC
+                amount: 15000,
+                dexA: 'Uniswap V3',
+                dexB: 'Equalizer',
+                profitPercentage: 0.08
+            },
+            {
+                asset: '0x4200000000000000000000000000000000000006', // WETH
+                amount: 2,
+                dexA: 'Equalizer',
+                dexB: 'Aerodrome',
+                profitPercentage: 0.15
+            }
+        ];
+        
+        for (let i = 0; i < scenarios.length; i++) {
+            const scenario = scenarios[i];
+            const basePrice = scenario.asset === '0x4200000000000000000000000000000000000006' ? 2800 : 1;
+            
+            opportunities.push({
+                asset: scenario.asset,
+                amount: scenario.amount,
+                dexA: scenario.dexA,
+                dexB: scenario.dexB,
+                estimatedProfit: (scenario.amount * basePrice * scenario.profitPercentage) / 100,
+                profitPercentage: scenario.profitPercentage,
+                gasEstimate: 800000
+            });
+        }
+        
+        console.log(`🎭 Generated ${opportunities.length} simulated flash loan opportunities`);
+        return opportunities;
+    }
+
             // Convert opportunity to smart contract format
             const tokenA = this.getTokenAddress(opportunity.token_pair.split('/')[0]);
             const tokenB = this.getTokenAddress(opportunity.token_pair.split('/')[1]);
