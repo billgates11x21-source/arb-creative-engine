@@ -86,8 +86,8 @@ class FlashLoanService {
 
     private async loadDeploymentInfo(): Promise<any> {
         try {
-            const fs = require('fs');
-            const path = require('path');
+            const fs = await import('fs');
+            const path = await import('path');
             const deploymentPath = path.join(__dirname, '../contracts/deployment-info.json');
 
             if (fs.existsSync(deploymentPath)) {
