@@ -9,6 +9,7 @@ import { arbitrageEngine, TRADING_STRATEGIES } from "./trading-strategies";
 import { getAllActiveDEXes, getDEXById } from "./dex-registry";
 import { riskManager } from "./risk-management";
 import { backgroundEngine } from "./background-engine";
+import { dcaEngine } from "./dca-automation";
 import {
   tradingOpportunities,
   executedTrades,
@@ -32,6 +33,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Initialize OKX service
   await okxService.initialize();
+  
+  // Initialize DCA automation engine
+  await dcaEngine.initializeDCA();
 
   // Trading Engine Routes
   app.post("/api/trading-engine", async (req, res) => {
@@ -71,6 +75,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         case 'get_background_status':
           return await getBackgroundStatus(req, res);
+
+        case 'get_dca_status':
+          return await getDCAStatus(req, res);
+
+        case 'add_dca_schedule':
+          return await addDCASchedule(req, res, data);
+
+        case 'toggle_dca':
+          return await toggleDCA(req, res, data);
+
+        case 'get_profit_metrics':
+          return await getProfitMetrics(req, res);
 
         default:
           return res.status(400).json({ error: 'Invalid action' });
@@ -303,9 +319,9 @@ async function scanArbitrageOpportunities(req: any, res: any) {
     }
   }
 
-// Helper functions for validation and sanitization
+// Enhanced validation with profitability focus
 function isValidOpportunity(opportunity: any): boolean {
-  return (
+  const isBasicallyValid = (
     opportunity &&
     opportunity.token_pair &&
     typeof opportunity.token_pair === 'string' &&
@@ -316,6 +332,27 @@ function isValidOpportunity(opportunity: any): boolean {
     !isNaN(parseFloat(opportunity.profit_percentage)) &&
     parseFloat(opportunity.profit_percentage) > 0
   );
+
+  if (!isBasicallyValid) return false;
+
+  // Enhanced profitability validation
+  const profitPct = parseFloat(opportunity.profit_percentage);
+  const riskScore = opportunity.risk_score || 5;
+  const confidence = opportunity.confidence || 50;
+
+  // Advanced profit criteria based on strategy
+  const strategy = opportunity.strategy || '';
+  let minProfitThreshold = 0.5; // Default 0.5%
+
+  if (strategy === 'mean_reversion') minProfitThreshold = 0.8;
+  else if (strategy === 'momentum_trading') minProfitThreshold = 1.2;
+  else if (strategy === 'grid_trading') minProfitThreshold = 0.6;
+  else if (strategy === 'flash_loan_arbitrage') minProfitThreshold = 1.5;
+
+  // Risk-adjusted profit validation
+  const riskAdjustedProfit = profitPct * (confidence / 100) * (6 - riskScore) / 5;
+
+  return riskAdjustedProfit >= minProfitThreshold;
 }
 
 function sanitizeOpportunityData(opportunity: any) {
@@ -1107,6 +1144,175 @@ async function getBackgroundStatus(req: any, res: any) {
     });
   } catch (error) {
     console.error('Error getting background status:', error);
+    return res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+  }
+}
+
+// DCA Management Endpoints
+async function getDCAStatus(req: any, res: any) {
+  try {
+    const dcaSchedules = await dcaEngine.getDCAStatus();
+    
+    const dcaMetrics = dcaSchedules.map(schedule => ({
+      id: schedule.id,
+      tokenPair: schedule.config.tokenPair,
+      totalInvested: schedule.totalInvested,
+      totalTokens: schedule.totalTokensAccumulated,
+      averagePrice: schedule.averageBuyPrice,
+      unrealizedPnL: schedule.unrealizedPnL,
+      pnlPercentage: schedule.totalInvested > 0 ? (schedule.unrealizedPnL / schedule.totalInvested) * 100 : 0,
+      nextExecution: schedule.nextExecutionTime,
+      isActive: schedule.config.isActive
+    }));
+
+    return res.json({
+      success: true,
+      dcaSchedules: dcaMetrics,
+      totalSchedules: dcaSchedules.length,
+      activeSchedules: dcaSchedules.filter(s => s.config.isActive).length,
+      totalInvested: dcaSchedules.reduce((sum, s) => sum + s.totalInvested, 0),
+      totalUnrealizedPnL: dcaSchedules.reduce((sum, s) => sum + s.unrealizedPnL, 0)
+    });
+  } catch (error) {
+    console.error('Error getting DCA status:', error);
+    return res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+  }
+}
+
+async function addDCASchedule(req: any, res: any, data: any) {
+  try {
+    const { tokenPair, intervalHours, amountPerPurchase, maxTotalInvestment } = data;
+    
+    const dcaConfig = {
+      tokenPair,
+      intervalHours: intervalHours || 12,
+      amountPerPurchase: amountPerPurchase || 50,
+      maxTotalInvestment: maxTotalInvestment || 2000,
+      stopLossPercentage: 15,
+      takeProfitPercentage: 25,
+      isActive: true
+    };
+
+    const scheduleId = await dcaEngine.addDCASchedule(dcaConfig);
+
+    return res.json({
+      success: true,
+      scheduleId,
+      message: `DCA schedule created for ${tokenPair}`,
+      config: dcaConfig
+    });
+  } catch (error) {
+    console.error('Error adding DCA schedule:', error);
+    return res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+  }
+}
+
+async function toggleDCA(req: any, res: any, data: any) {
+  try {
+    const { scheduleId, action } = data; // action: 'pause' or 'resume'
+    
+    let success = false;
+    if (action === 'pause') {
+      success = await dcaEngine.pauseDCA(scheduleId);
+    } else if (action === 'resume') {
+      success = await dcaEngine.resumeDCA(scheduleId);
+    }
+
+    return res.json({
+      success,
+      message: success ? `DCA ${action}d successfully` : `Failed to ${action} DCA`,
+      scheduleId
+    });
+  } catch (error) {
+    console.error('Error toggling DCA:', error);
+    return res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+  }
+}
+
+async function getProfitMetrics(req: any, res: any) {
+  try {
+    // Get trading performance for the last 7 days
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const recentTrades = await db.select().from(executedTrades)
+      .where(gte(executedTrades.createdAt, sevenDaysAgo))
+      .orderBy(desc(executedTrades.createdAt));
+
+    // Calculate comprehensive profit metrics
+    const totalProfit = recentTrades.reduce((sum, trade) => 
+      sum + parseFloat(trade.profitRealized || '0'), 0
+    );
+    
+    const totalVolume = recentTrades.reduce((sum, trade) => 
+      sum + parseFloat(trade.amountTraded || '0'), 0
+    );
+    
+    const successfulTrades = recentTrades.filter(t => 
+      t.status === 'confirmed' && parseFloat(t.profitRealized || '0') > 0
+    ).length;
+    
+    const totalTrades = recentTrades.length;
+    const winRate = totalTrades > 0 ? (successfulTrades / totalTrades) * 100 : 0;
+    
+    // Calculate profit by strategy
+    const profitByStrategy = recentTrades.reduce((acc, trade) => {
+      const strategy = trade.strategyId?.toString() || 'unknown';
+      const profit = parseFloat(trade.profitRealized || '0');
+      
+      if (!acc[strategy]) {
+        acc[strategy] = { profit: 0, trades: 0, volume: 0 };
+      }
+      
+      acc[strategy].profit += profit;
+      acc[strategy].trades += 1;
+      acc[strategy].volume += parseFloat(trade.amountTraded || '0');
+      
+      return acc;
+    }, {} as { [key: string]: { profit: number; trades: number; volume: number } });
+    
+    // Calculate daily profit trend
+    const dailyProfits = [];
+    for (let i = 6; i >= 0; i--) {
+      const dayStart = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
+      const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+      
+      const dayTrades = recentTrades.filter(trade => {
+        const tradeDate = new Date(trade.createdAt);
+        return tradeDate >= dayStart && tradeDate < dayEnd;
+      });
+      
+      const dayProfit = dayTrades.reduce((sum, trade) => 
+        sum + parseFloat(trade.profitRealized || '0'), 0
+      );
+      
+      dailyProfits.push({
+        date: dayStart.toISOString().split('T')[0],
+        profit: dayProfit,
+        trades: dayTrades.length
+      });
+    }
+    
+    // Get DCA performance
+    const dcaSchedules = await dcaEngine.getDCAStatus();
+    const dcaTotalPnL = dcaSchedules.reduce((sum, s) => sum + s.unrealizedPnL, 0);
+    
+    return res.json({
+      success: true,
+      profitMetrics: {
+        totalProfit: Math.round(totalProfit * 100) / 100,
+        totalVolume: Math.round(totalVolume * 100) / 100,
+        totalTrades,
+        successfulTrades,
+        winRate: Math.round(winRate * 100) / 100,
+        profitByStrategy,
+        dailyProfits,
+        dcaTotalPnL: Math.round(dcaTotalPnL * 100) / 100,
+        averageProfitPerTrade: totalTrades > 0 ? Math.round((totalProfit / totalTrades) * 100) / 100 : 0,
+        profitPerDay: Math.round((totalProfit / 7) * 100) / 100
+      },
+      generatedAt: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error getting profit metrics:', error);
     return res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
   }
 }
