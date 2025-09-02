@@ -71,12 +71,13 @@ app.use((req, res, next) => {
     log(`serving on port ${port}`);
 
     // Initialize services with proper error handling
-    try {
-      const okxInitialized = okxService.initialize();
-      console.log('✅ OKX service initialized successfully');
+    (async () => {
+      try {
+        const okxInitialized = await okxService.initialize();
+        console.log('✅ OKX service initialized successfully');
 
-      // Initialize Flash Loan service (will check for deployed contract and private key)
-      const flashLoanInitialized = await flashLoanService.initialize(process.env.PRIVATE_KEY);
+        // Initialize Flash Loan service (will check for deployed contract and private key)
+        const flashLoanInitialized = await flashLoanService.initialize(process.env.PRIVATE_KEY);
       
       if (flashLoanInitialized) {
         console.log('✅ Flash Loan service initialized successfully');
@@ -86,8 +87,9 @@ app.use((req, res, next) => {
         console.log('💡 Flash Loan service in simulation mode - add PRIVATE_KEY to activate');
       }
     } catch (error) {
-      console.error('⚠️ Service initialization error:', error.message);
-    }
+        console.error('⚠️ Service initialization error:', error.message);
+      }
+    })();
 
     // Auto-start background engine in production
     if (process.env.NODE_ENV === 'production') {

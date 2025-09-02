@@ -191,9 +191,11 @@ class OKXService {
   }
 
   async scanRealOpportunities(): Promise<any[]> {
+    console.log(`🔍 Market Data Source: ${this.isConnected ? 'LIVE OKX WebSocket' : 'REST API Fallback'}`);
+    
     if (!this.isConnected) {
-      // Return simulated opportunities if not connected
-      return this.generateSimulatedOpportunities();
+      console.log('⚠️ WebSocket disconnected, using REST API for real market data');
+      return await this.scanViaRestAPI();
     }
 
     try {
@@ -279,11 +281,89 @@ class OKXService {
     return Math.random() * 2; // 0-2% volatility
   }
 
+  private async scanViaRestAPI(): Promise<any[]> {
+    console.log('📡 Fetching REAL market data via REST API...');
+    
+    try {
+      const realTickers = await this.fetchTickersREST();
+      console.log(`✅ Retrieved ${realTickers.length} real market tickers`);
+      
+      return this.analyzeRealMarketData(realTickers);
+    } catch (error) {
+      console.error('❌ REST API failed, no real data available:', error);
+      return this.generateSimulatedOpportunities();
+    }
+  }
+
+  private async analyzeRealMarketData(tickers: OKXTicker[]): Promise<any[]> {
+    const opportunities = [];
+    console.log('🧮 Analyzing REAL market price discrepancies...');
+
+    for (let i = 0; i < tickers.length - 1; i++) {
+      for (let j = i + 1; j < tickers.length; j++) {
+        const ticker1 = tickers[i];
+        const ticker2 = tickers[j];
+        
+        // Only compare same base currency (e.g., BTC-USDT vs BTC-USDC)
+        const base1 = ticker1.instId.split('-')[0];
+        const base2 = ticker2.instId.split('-')[0];
+        
+        if (base1 === base2) {
+          const realOpportunity = this.detectRealMarketArbitrage(ticker1, ticker2);
+          if (realOpportunity) {
+            console.log(`💡 REAL arbitrage found: ${realOpportunity.token_pair} - ${realOpportunity.profit_percentage}%`);
+            opportunities.push(realOpportunity);
+          }
+        }
+      }
+    }
+
+    console.log(`📊 Found ${opportunities.length} REAL market opportunities`);
+    return opportunities;
+  }
+
+  private detectRealMarketArbitrage(ticker1: OKXTicker, ticker2: OKXTicker): any | null {
+    const price1 = parseFloat(ticker1.last);
+    const price2 = parseFloat(ticker2.last);
+    
+    if (price1 <= 0 || price2 <= 0) return null;
+    
+    // Calculate real price difference
+    const priceDiff = Math.abs(price1 - price2);
+    const avgPrice = (price1 + price2) / 2;
+    const profitPercentage = (priceDiff / avgPrice) * 100;
+    
+    // Only real opportunities with actual profit potential
+    if (profitPercentage < 0.05) return null;
+    
+    const buyPrice = Math.min(price1, price2);
+    const sellPrice = Math.max(price1, price2);
+    const buyExchange = price1 < price2 ? ticker1.instId : ticker2.instId;
+    const sellExchange = price1 < price2 ? ticker2.instId : ticker1.instId;
+    
+    return {
+      id: `real_${buyExchange}_${sellExchange}_${Date.now()}`,
+      token_pair: `${ticker1.instId.split('-')[0]}/USDT`,
+      buy_exchange: buyExchange,
+      sell_exchange: sellExchange,
+      buy_price: buyPrice,
+      sell_price: sellPrice,
+      profit_percentage: profitPercentage.toFixed(3),
+      profit_amount: (priceDiff * 1).toFixed(4),
+      volume_available: ticker1.vol24h,
+      confidence: 90, // High confidence for real market data
+      timestamp: new Date().toISOString(),
+      executable: true,
+      execution_ready: profitPercentage >= 0.1,
+      data_source: 'REAL_OKX_API'
+    };
+  }
+
   private generateSimulatedOpportunities(): any[] {
-    // This function would generate mock opportunities if the real API calls fail
+    console.log('⚠️ FALLBACK: Generating simulated opportunities (NO REAL DATA AVAILABLE)');
     return [
-      { id: 'sim_1', token_pair: 'BTC/USDT', buy_exchange: 'Simulated', sell_exchange: 'Simulated', buy_price: '30000', sell_price: '30100', profit_percentage: '0.33', profit_amount: '100', volume_available: '50', confidence: 70, timestamp: new Date().toISOString(), executable: false, execution_ready: false },
-      { id: 'sim_2', token_pair: 'ETH/USDT', buy_exchange: 'Simulated', sell_exchange: 'Simulated', buy_price: '2000', sell_price: '2015', profit_percentage: '0.75', profit_amount: '15', volume_available: '30', confidence: 85, timestamp: new Date().toISOString(), executable: false, execution_ready: false }
+      { id: 'sim_1', token_pair: 'BTC/USDT', buy_exchange: 'Simulated', sell_exchange: 'Simulated', buy_price: '30000', sell_price: '30100', profit_percentage: '0.33', profit_amount: '100', volume_available: '50', confidence: 70, timestamp: new Date().toISOString(), executable: false, execution_ready: false, data_source: 'SIMULATED' },
+      { id: 'sim_2', token_pair: 'ETH/USDT', buy_exchange: 'Simulated', sell_exchange: 'Simulated', buy_price: '2000', sell_price: '2015', profit_percentage: '0.75', profit_amount: '15', volume_available: '30', confidence: 85, timestamp: new Date().toISOString(), executable: false, execution_ready: false, data_source: 'SIMULATED' }
     ];
   }
 

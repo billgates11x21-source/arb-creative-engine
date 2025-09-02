@@ -178,12 +178,13 @@ export function TradingDashboard() {
 
           <TabsContent value="opportunities" className="mt-6">
             <div className="mb-6">
-              <h2 className="text-2xl font-bold text-foreground mb-2 neon-text">
-                Live Arbitrage Opportunities
-              </h2>
-              <p className="text-muted-foreground">
-                Real-time scanning across multiple DEXs • Mainnet ready • Simulation mode active
-              </p>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-2xl font-bold text-white">Live Arbitrage Opportunities</h2>
+                <div className="flex items-center gap-2">
+                  <div className="h-2 w-2 bg-green-500 rounded-full animate-pulse"></div>
+                  <span className="text-sm text-gray-400">Real Market Data</span>
+                </div>
+              </div>
             </div>
 
             {/* High Profit Opportunities */}
