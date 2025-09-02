@@ -2,7 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { backgroundEngine } from "./background-engine";
 import { setupVite, serveStatic, log } from "./vite";
-import { okxService } from "./services/okxService";
+import { okxService } from './okx-service';
 import { flashLoanService } from "./services/flashLoanService";
 
 const app = express();

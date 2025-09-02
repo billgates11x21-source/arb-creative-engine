@@ -6,6 +6,7 @@ import { db } from "./db";
 import { seedDatabase } from "./seed";
 import { okxService } from "./okx-service";
 import { flashLoanService } from './flashloan-service';
+import { flashLoanExamples, executeExampleFlashLoanTrade } from './flashloan-examples';
 import { arbitrageEngine, TRADING_STRATEGIES } from "./trading-strategies";
 import { getAllActiveDEXes, getDEXById } from "./dex-registry";
 import { riskManager } from "./risk-management";
@@ -37,6 +38,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Initialize DCA automation engine
   await dcaEngine.initializeDCA();
+
+  // Flash loan example endpoint
+  app.get('/api/flashloan-example', async (req, res) => {
+    try {
+      const example = await executeExampleFlashLoanTrade();
+      res.json(example);
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: error.message,
+        message: "Flash loan example generation failed"
+      });
+    }
+  });
 
   // Trading Engine Routes
   app.post("/api/trading-engine", async (req, res) => {
