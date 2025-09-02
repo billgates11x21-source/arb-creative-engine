@@ -362,6 +362,62 @@ class OKXService {
     };
   }
 
+  async executeAIOptimizedTrade(opportunity: any, amount: number, strategy: any): Promise<any> {
+    try {
+      console.log(`AI executing optimized trade with strategy: ${strategy.strategy}`);
+      
+      // Use AI strategy parameters
+      const result = await this.executeRealTrade(opportunity, amount);
+      
+      // AI can add additional optimization here
+      if (strategy.splitOrder && amount > 10) {
+        // Execute as multiple smaller orders for better fills
+        return await this.executeSplitOrder(opportunity, amount, strategy);
+      }
+      
+      return result;
+    } catch (error) {
+      console.error('AI optimized trade failed:', error);
+      throw error;
+    }
+  }
+
+  private async executeSplitOrder(opportunity: any, totalAmount: number, strategy: any): Promise<any> {
+    const orderCount = Math.min(Math.ceil(totalAmount / 5), 4); // Max 4 split orders
+    const orderSize = totalAmount / orderCount;
+    
+    let totalProfit = 0;
+    let totalExecuted = 0;
+    const txHashes = [];
+    
+    for (let i = 0; i < orderCount; i++) {
+      try {
+        const result = await this.executeRealTrade(opportunity, orderSize);
+        totalProfit += result.actualProfit;
+        totalExecuted += result.actualAmount || orderSize;
+        txHashes.push(result.txHash);
+        
+        // Brief delay between orders
+        await new Promise(resolve => setTimeout(resolve, 500));
+      } catch (error) {
+        console.error(`Split order ${i + 1} failed:`, error);
+        // Continue with remaining orders
+      }
+    }
+    
+    return {
+      success: totalExecuted > 0,
+      txHash: txHashes.join('_'),
+      actualProfit: totalProfit,
+      actualAmount: totalExecuted,
+      gasUsed: 0,
+      gasPrice: 0,
+      executionTime: orderCount * 2.5,
+      splitExecution: true,
+      ordersExecuted: txHashes.length
+    };
+  }
+
   async executeRealTrade(opportunity: any, amount: number): Promise<any> {
     try {
       // Handle both database format (tokenPair) and API format (token_pair)
