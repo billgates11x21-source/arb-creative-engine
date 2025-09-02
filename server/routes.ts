@@ -267,20 +267,20 @@ async function scanArbitrageOpportunities(req: any, res: any) {
         const availableBalance = spotBalance[quoteCurrency] || 0;
         const minRequiredBalance = 10; // Minimum $10 equivalent
         
-        const hasBalance = availableBalance >= minRequiredBalance;
-        const profitableEnough = formattedOpp.profit_percentage > 0.3; // Minimum 0.3%
+        const hasBalance = availableBalance >= 1; // Lower threshold to $1
+        const profitableEnough = formattedOpp.profit_percentage > 0.15; // Lower threshold to 0.15%
 
         if (isValidForOKX && hasBalance && profitableEnough) {
           try {
             // AI decision with balance consideration
             const aiDecision = await makeAITradingDecision(formattedOpp, spotBalance);
             
-            console.log(`🎯 Executing valid OKX trade for ${formattedOpp.token_pair}: Balance ${availableBalance} ${quoteCurrency}, Profit ${formattedOpp.profit_percentage}%`);
+            console.log(`🎯 AUTO-EXECUTING valid OKX trade for ${formattedOpp.token_pair}: Balance ${availableBalance} ${quoteCurrency}, Profit ${formattedOpp.profit_percentage}%`);
 
             const optimalAmount = calculateOptimalTradeAmountWithBalance(formattedOpp, aiDecision, spotBalance);
             const executionStrategy = selectOptimalExecutionStrategy(formattedOpp, aiDecision);
 
-            // Execute with enhanced error handling
+            // Force execute immediately for all profitable opportunities
             const executionResult = await okxService.executeAIOptimizedTrade(dbRecord, optimalAmount, executionStrategy);
 
             // Only record successful trades
@@ -831,30 +831,30 @@ async function makeAITradingDecision(opportunity: any, spotBalance?: { [currency
     balanceScore * 0.2 // 20% weight on balance
   );
 
-  // Higher threshold for more selective execution
-  const executionThreshold = 55; // More conservative threshold
+  // Lower threshold for automatic execution with small balance
+  const executionThreshold = 45; // More aggressive threshold for small balances
 
   // Strategy selection based on opportunity characteristics
-  let recommendedStrategy = 'conservative_arbitrage';
+  let recommendedStrategy = 'aggressive_small_balance';
   let strategyId = 1;
 
-  if (opportunity.profit_percentage > 3 && balanceScore > 70) {
-    recommendedStrategy = 'high_profit_arbitrage';
+  if (opportunity.profit_percentage > 1 && balanceScore > 40) {
+    recommendedStrategy = 'profit_focused_arbitrage';
     strategyId = 2;
-  } else if (opportunity.profit_percentage > 1.5) {
-    recommendedStrategy = 'medium_profit_arbitrage';
+  } else if (opportunity.profit_percentage > 0.5) {
+    recommendedStrategy = 'scalable_arbitrage';
     strategyId = 3;
-  } else if (opportunity.volume_available > 50) {
-    recommendedStrategy = 'high_volume_arbitrage';
+  } else if (opportunity.volume_available > 10) {
+    recommendedStrategy = 'volume_arbitrage';
     strategyId = 4;
   }
 
-  // More selective execution criteria
+  // More aggressive execution criteria for small balance scaling
   const shouldExecute = (
-    opportunity.profit_percentage > 0.3 && 
-    opportunity.risk_score <= 3 && 
+    opportunity.profit_percentage > 0.15 && 
+    opportunity.risk_score <= 4 && 
     aiConfidence >= executionThreshold &&
-    balanceScore >= 60
+    balanceScore >= 30 // Lower balance requirement
   );
 
   console.log(`AI Decision for ${opportunity.id}: Profit ${opportunity.profit_percentage}%, Risk ${opportunity.risk_score}, Balance Score ${balanceScore}, Confidence ${aiConfidence.toFixed(1)} - ${shouldExecute ? 'EXECUTE' : 'SKIP'}`);
@@ -956,9 +956,10 @@ function calculateOptimalTradeAmountWithBalance(opportunity: any, aiDecision: an
   // Get allocation rules for this token type
   const allocation = okxService.getTokenAllocation(tokenPair, availableBalance);
   
-  // Start with balance-based calculation
-  const maxTradeValue = allocation.maxUsable * 0.02; // Max 2% of allocated balance per trade
-  const baseAmount = Math.min(maxTradeValue, availableBalance * 0.05); // Never exceed 5% of total balance
+  // More aggressive for small balances - scale up strategy
+  const balanceMultiplier = availableBalance < 10 ? 0.15 : availableBalance < 50 ? 0.08 : 0.02;
+  const maxTradeValue = allocation.maxUsable * balanceMultiplier; // Scale based on balance size
+  const baseAmount = Math.min(maxTradeValue, availableBalance * 0.2); // Use up to 20% for small balances
 
   // Conservative multipliers for live trading
   let multiplier = 1.0;
@@ -984,8 +985,9 @@ function calculateOptimalTradeAmountWithBalance(opportunity: any, aiDecision: an
 
   const optimalAmount = Math.min(baseAmount * multiplier, allocation.maxUsable * 0.05);
 
-  // Ensure minimum viable trade size
-  return Math.max(optimalAmount, 5); // Minimum $5 trade
+  // Scale minimum trade size based on available balance
+  const minTradeSize = Math.min(1, availableBalance * 0.1); // Minimum $1 or 10% of balance
+  return Math.max(optimalAmount, minTradeSize);
 }
 
 // Keep original function for backward compatibility

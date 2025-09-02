@@ -247,7 +247,7 @@ class OKXService {
         if (realProfit > 0 && realProfitPercentage > 0.15) {
           // Enhanced AI momentum analysis
           const momentumScore = this.calculateMomentumScore(ticker, spreadPercentage);
-          
+
           if (momentumScore > 2.5) {
             // AI optimized profit margins with safety buffer
             const enhancedSellPrice = aiOptimalBuyPrice * (1 + Math.max(0.002, realProfitPercentage / 100 * 1.5));
@@ -292,22 +292,22 @@ class OKXService {
   private calculateMomentumScore(ticker: OKXTicker, spreadPercentage: number): number {
     const volume = parseFloat(ticker.vol24h || '0');
     const currentPrice = parseFloat(ticker.last);
-    
+
     let score = 0;
-    
+
     // Volume momentum
     if (volume > 10000) score += 2;
     else if (volume > 5000) score += 1.5;
     else if (volume > 1000) score += 1;
-    
+
     // Price momentum
     if (currentPrice > 50) score += 1;
     else if (currentPrice > 10) score += 0.5;
-    
+
     // Spread efficiency
     if (spreadPercentage > 0.2) score += 1.5;
     else if (spreadPercentage > 0.1) score += 1;
-    
+
     return score;
   }
 
@@ -617,7 +617,7 @@ class OKXService {
         amount, // Respect requested amount
         minAmount * 10 // Cap at 10x minimum to avoid excessive trades
       );
-      
+
       tradeAmount = Math.max(tradeAmount, minAmount);
 
       // AI validates all calculations
@@ -659,7 +659,7 @@ class OKXService {
         const currentMarketTicker = await this.exchange.fetchTicker(symbol);
         const currentBid = currentMarketTicker.bid;
         const buyPrice = buyOrder.average || buyOrder.price || optimalBuyPrice;
-        
+
         // AI profit validation before sell order
         const expectedProfitFromSell = (currentBid - buyPrice) * actualBoughtAmount;
         const tradingFees = (buyOrder.fee?.cost || 0) + (currentBid * actualBoughtAmount * 0.001); // Estimate sell fee
@@ -815,27 +815,27 @@ class OKXService {
       // Get real-time ticker data
       const ticker = this.tickerData.get(tokenPair.replace('/', '-')) || 
                     await this.fetchSingleTicker(tokenPair);
-      
+
       const currentPrice = parseFloat(ticker.last);
       const volume = parseFloat(ticker.vol24h || '0');
-      
+
       // Generate technical indicators (simplified for demo - use TA library in production)
       const rsi = 45 + Math.random() * 20; // 45-65 range
       const macd = {
         signal: (Math.random() - 0.5) * 2, // -1 to 1
         histogram: (Math.random() - 0.5) * 0.5
       };
-      
+
       const bollinger = {
         upper: currentPrice * 1.02,
         lower: currentPrice * 0.98,
         middle: currentPrice
       };
-      
+
       const volumeSpike = 1 + Math.random() * 2; // 1-3x normal volume
       const volatility = 0.1 + Math.random() * 0.3; // 10-40% volatility
       const smartMoneyFlow = (Math.random() - 0.5) * 1000000; // -$500k to +$500k
-      
+
       return {
         currentPrice,
         rsi,
@@ -845,7 +845,7 @@ class OKXService {
         volatility,
         smartMoneyFlow
       };
-      
+
     } catch (error) {
       console.error('Error getting advanced market data:', error);
       // Return safe defaults
@@ -963,36 +963,36 @@ class OKXService {
   }> {
     const currentPrice = parseFloat(opportunity.buy_price) || marketData.currentPrice;
     const expectedSellPrice = parseFloat(opportunity.sell_price) || currentPrice;
-    
+
     // Technical analysis validation
     const rsi = marketData.rsi || 50;
     const macd = marketData.macd || { signal: 0 };
     const bollinger = marketData.bollinger || { upper: currentPrice * 1.02, lower: currentPrice * 0.98 };
-    
+
     let confidence = 50;
-    
+
     // RSI confirmation
     if (opportunity.strategy === 'mean_reversion') {
       if (rsi < 35 && currentPrice < bollinger.lower) confidence += 25;
       else if (rsi > 65 && currentPrice > bollinger.upper) confidence += 25;
     }
-    
+
     // MACD confirmation for momentum
     if (opportunity.strategy === 'momentum_trading') {
       if (macd.signal > 0 && rsi > 55) confidence += 20;
     }
-    
+
     // Volume confirmation
     if (marketData.volumeSpike > 1.5) confidence += 15;
-    
+
     // Risk-adjusted return calculation
     const expectedReturn = (expectedSellPrice - currentPrice) / currentPrice;
     const riskAdjustedReturn = expectedReturn * (confidence / 100);
-    
+
     // Dynamic stop-loss and take-profit
     const stopLoss = currentPrice * 0.985; // 1.5% stop-loss
     const takeProfit = currentPrice * (1 + Math.max(0.015, expectedReturn));
-    
+
     return {
       isValid: confidence > 65 && riskAdjustedReturn > 0.008, // 0.8% minimum risk-adjusted return
       confidence,
