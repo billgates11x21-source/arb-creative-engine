@@ -1,6 +1,6 @@
 
-const { deployFlashLoanContract } = require('./contracts/deploy.js');
-const { ethers } = require('ethers');
+import { deployFlashLoanContract } from './contracts/deploy.js';
+import { ethers } from 'ethers';
 
 async function deployWithCostEstimation() {
     console.log("💰 FLASH LOAN CONTRACT DEPLOYMENT COST ESTIMATION");
@@ -63,7 +63,8 @@ async function deployWithCostEstimation() {
     }
 }
 
-if (require.main === module) {
+// ES module check equivalent
+if (import.meta.url === `file://${process.argv[1]}`) {
     deployWithCostEstimation()
         .then(result => {
             if (result.ready && !result.contractAddress) {
@@ -76,4 +77,4 @@ if (require.main === module) {
         });
 }
 
-module.exports = { deployWithCostEstimation };
+export { deployWithCostEstimation };
