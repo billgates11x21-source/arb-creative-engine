@@ -9,6 +9,8 @@ import { flashLoanService } from './flashloan-service';
 import { flashLoanExamples } from './flashloan-examples';
 import { transactionExample } from './transaction-example';
 import { arbitrageEngine, TRADING_STRATEGIES } from "./trading-strategies";
+import { dexscreenerService } from "./dexscreener-service";
+import { alchemyService } from "./alchemy-service";
 import { getAllActiveDEXes, getDEXById } from "./dex-registry";
 import { riskManager } from "./risk-management";
 import { backgroundEngine } from "./background-engine";
@@ -181,6 +183,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return res.json(status);
   });
 
+  // Enhanced market data with Dexscreener and Alchemy
+  app.get("/api/market-data", async (req: any, res: any) => {
+    try {
+      const [dexPairs, latestBlock] = await Promise.all([
+        dexscreenerService.getLatestPairs(['ethereum', 'base']),
+        alchemyService.getLatestBlock()
+      ]);
+
+      res.json({
+        dexscreener: dexPairs.slice(0, 10),
+        ethereum: {
+          latestBlock: latestBlock?.number,
+          timestamp: latestBlock?.timestamp
+        }
+      });
+    } catch (error) {
+      console.error("Error fetching market data:", error);
+      res.status(500).json({ error: "Failed to fetch market data" });
+    }
+  });
+
+  // Dexscreener arbitrage opportunities
+  app.get("/api/dex-opportunities", async (req: any, res: any) => {
+    try {
+      const opportunities = await dexscreenerService.getArbitrageOpportunities();
+      res.json(opportunities);
+    } catch (error) {
+      console.error("Error fetching DEX opportunities:", error);
+      res.status(500).json({ error: "Failed to fetch opportunities" });
+    }
+  });
 
   const httpServer = createServer(app);
 
@@ -1574,4 +1607,55 @@ async function autoExecuteOpportunities(req: any, res: any) {
       executedCount: 0
     });
   }
+});
+
+  // Enhanced market data with Dexscreener and Alchemy
+  app.get("/api/market-data", async (req: any, res: any) => {
+    try {
+      const [dexPairs, latestBlock] = await Promise.all([
+        dexscreenerService.getLatestPairs(['ethereum', 'base']),
+        alchemyService.getLatestBlock()
+      ]);
+
+      res.json({
+        dexscreener: dexPairs.slice(0, 10),
+        ethereum: {
+          latestBlock: latestBlock?.number,
+          timestamp: latestBlock?.timestamp
+        }
+      });
+    } catch (error) {
+      console.error("Error fetching market data:", error);
+      res.status(500).json({ error: "Failed to fetch market data" });
+    }
+  });
+
+  // Dexscreener arbitrage opportunities
+  app.get("/api/dex-opportunities", async (req: any, res: any) => {
+    try {
+      const opportunities = await dexscreenerService.getArbitrageOpportunities();
+      res.json(opportunities);
+    } catch (error) {
+      console.error("Error fetching DEX opportunities:", error);
+      res.status(500).json({ error: "Failed to fetch opportunities" });
+    }
+  });
+
+  // Alchemy gas estimates
+  app.get("/api/gas-estimate", async (req: any, res: any) => {
+    try {
+      const { to, value, data } = req.query;
+      const estimate = await alchemyService.getGasEstimate(
+        to as string,
+        value as string,
+        data as string
+      );
+      res.json(estimate);
+    } catch (error) {
+      console.error("Error fetching gas estimate:", error);
+      res.status(500).json({ error: "Failed to fetch gas estimate" });
+    }
+  });
+
+  return httpServer;
 }
