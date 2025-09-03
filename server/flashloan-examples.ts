@@ -250,7 +250,7 @@ export const flashLoanExamples = new FlashLoanExamples();
 export async function runFlashLoanExample(): Promise<void> {
   try {
     console.log("🚀 Flash Loan Arbitrage Example");
-    console.log("=" * 50);
+    console.log("=".repeat(50));
     
     const completeExample = await flashLoanExamples.createCompleteExample();
     
@@ -299,7 +299,7 @@ export async function executeExampleFlashLoanTrade(): Promise<any> {
   console.log("🎯 FLASH LOAN ARBITRAGE EXAMPLE");
   console.log("Initial Balance: $20 USDT");
   console.log("Minimum Spread: 0.33%");
-  console.log("=" * 60);
+  console.log("=".repeat(60));
   
   // Example opportunity that meets your criteria
   const exampleOpportunity = {

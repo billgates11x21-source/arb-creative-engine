@@ -165,7 +165,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         autoExecutionEnabled: hasOKXKeys && okxStatus.isConnected,
         fallbackMode: !hasOKXKeys || !okxStatus.isConnected
       },
-      nextSteps: []
+      nextSteps: [] as string[]
     };
 
     if (!hasOKXKeys) {
@@ -348,7 +348,7 @@ async function scanArbitrageOpportunities(req: any, res: any) {
           const aiDecision = await makeAITradingDecision(formattedOpp, spotBalance);
 
           // Enhanced integration with comprehensive profit verification
-          if (isValid) {
+          if (aiDecision) {
             console.log(`🎯 AUTO-EXECUTING valid trade for ${formattedOpp.token_pair}: Balance ${availableBalance} ${quoteCurrency}, Profit ${formattedOpp.profit_percentage}%`);
 
             // Import profit verification service
@@ -379,8 +379,7 @@ async function scanArbitrageOpportunities(req: any, res: any) {
               // Update database with verification status
               await db.update(tradingOpportunities)
                 .set({
-                  status: profitVerification.verified ? 'executing' : 'profit_verification_failed',
-                  notes: profitVerification.verified ? 'Profit verified in OKX wallet' : `Missing profits: ${JSON.stringify(profitVerification.missingProfits)}`
+                  status: profitVerification.verified ? 'executing' : 'profit_verification_failed'
                 })
                 .where(eq(tradingOpportunities.id, dbRecord.id));
 
@@ -388,8 +387,6 @@ async function scanArbitrageOpportunities(req: any, res: any) {
               if (profitVerification.verified) {
                 const trade = await db.insert(executedTrades).values({
                   opportunityId: dbRecord.id,
-                  strategyId: aiDecision.strategyId,
-                  transactionHash: executionResult.txHash || `trade_${Date.now()}`,
                   tokenPair: dbRecord.tokenPair,
                   buyExchange: dbRecord.buyExchange,
                   sellExchange: dbRecord.sellExchange,
@@ -1215,7 +1212,7 @@ async function getTradingStrategies(req: any, res: any) {
       strategies.map(async (strategy) => {
         const performance = await db.select()
           .from(strategyPerformance)
-          .where(eq(strategyPerformance.strategyId, strategy.id))
+          .where(eq(strategyPerformance.strategyId, parseInt(strategy.id)))
           .orderBy(desc(strategyPerformance.createdAt))
           .limit(1);
 
@@ -1521,7 +1518,6 @@ async function autoExecuteOpportunities(req: any, res: any) {
           profitRealized: simulatedResult.profit.toString(),
           gasUsed: 1500000, // Integer for gas units
           status: simulatedResult.success ? 'confirmed' : 'failed',
-          executedAt: new Date(),
           transactionHash: `0x${Math.random().toString(16).substr(2, 64)}` // Simulated hash
         });
 

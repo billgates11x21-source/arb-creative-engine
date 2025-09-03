@@ -20,7 +20,7 @@ export class FlashLoanTransactionExample {
     summary: any;
   }> {
     console.log("🎯 FLASH LOAN ARBITRAGE - DETAILED TRANSACTION EXAMPLE");
-    console.log("=" * 70);
+    console.log("=".repeat(70));
 
     const startTime = Date.now();
 
@@ -258,7 +258,7 @@ export async function showFlashLoanExample(): Promise<void> {
   console.log("🚀 FLASH LOAN ARBITRAGE TRANSACTION EXAMPLE");
   console.log("Starting Amount: $20 USDT");
   console.log("Target Spread: 0.05% minimum");
-  console.log("="* 60);
+  console.log("=".repeat(60));
 
   await transactionExample.printDetailedExample();
 }

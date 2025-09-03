@@ -1068,7 +1068,7 @@ export class ArbitrageEngine {
 
       let simulatedProfit = (sellPrice - buyPrice) * 1000; // Assume 1000 units traded
       let simulatedGas = dex1.avgGasCost + dex2.avgGasCost;
-      let simulatedExecutionTime = Math.max(dex1.avgExecutionTime, dex2.avgExecutionTime);
+      let simulatedExecutionTime = Math.max(dex1.avgExecutionTime || 0, dex2.avgExecutionTime || 0);
       let simulatedConfidence = Math.random() * 30 + 70; // 70-100% confidence
 
       // Adjust parameters based on strategy

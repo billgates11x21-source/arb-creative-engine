@@ -228,7 +228,7 @@ export class AdvancedRiskManager {
     safeAmount: number;
     riskFactors: string[];
   } {
-    const riskWeight = this.config.chainRiskWeights[chain] || 2.0;
+    const riskWeight = (this.config.chainRiskWeights as any)[chain] || 2.0;
     const currentExposure = this.currentMetrics.exposureByChain[chain] || 0;
     const maxChainExposure = this.currentMetrics.portfolioBalance * 0.4; // Max 40% per chain
     
