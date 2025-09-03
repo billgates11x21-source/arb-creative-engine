@@ -1165,7 +1165,7 @@ class OKXService {
         verified: false,
         balanceIncrease: 0,
         bridgeRequired: false,
-        error: error.message
+        error: error instanceof Error ? error.message : String(error)
       };
     }
   }
@@ -1219,7 +1219,7 @@ class OKXService {
       console.error("Error initiating bridge:", error);
       return {
         success: false,
-        error: error.message
+        error: error instanceof Error ? error.message : String(error)
       };
     }
   }

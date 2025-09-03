@@ -396,7 +396,7 @@ async function scanArbitrageOpportunities(req: any, res: any) {
                   gasPrice: (executionResult.gasPrice || 0).toString(),
                   executionTime: (executionResult.executionTime || 0).toString(),
                   status: 'confirmed',
-                  notes: `Profit verified: +${profitVerification.profitReceived} in OKX wallet`
+                  transactionHash: executionResult.txHash || ''
                 }).returning();
 
                 autoExecutedTrades.push(trade[0]);
