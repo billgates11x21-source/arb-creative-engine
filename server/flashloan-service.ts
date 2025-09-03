@@ -337,7 +337,7 @@ class FlashLoanService {
                 if (!withdrawResult.success) {
                     console.error("⚠️ Profit withdrawal failed:", withdrawResult.error);
                     // Log this for manual intervention
-                    await this.logProfitWithdrawalFailure(tx.hash, actualProfit, withdrawResult.error);
+                    await this.logProfitWithdrawalFailure(tx.hash || '', actualProfit, withdrawResult.error || 'Unknown error');
                 }
             }
 
@@ -355,7 +355,7 @@ class FlashLoanService {
             console.error("❌ Flash loan execution failed:", error);
             return {
                 success: false,
-                error: error.message,
+                error: error instanceof Error ? error.message : 'Unknown error',
                 actualProfit: 0
             };
         }
@@ -498,7 +498,7 @@ class FlashLoanService {
             console.error("Error withdrawing profit to OKX:", error);
             return {
                 success: false,
-                error: error.message
+                error: error instanceof Error ? error.message : 'Unknown error'
             };
         }
     }
@@ -600,7 +600,7 @@ class FlashLoanService {
             console.error("❌ Emergency withdrawal failed:", error);
             return {
                 success: false,
-                error: error.message
+                error: error instanceof Error ? error.message : 'Unknown error'
             };
         }
     }

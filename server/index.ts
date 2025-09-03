@@ -104,7 +104,7 @@ app.use((req, res, next) => {
         }, 30000); // Every 30 seconds
 
       } catch (error) {
-        console.error('⚠️ Service initialization error:', error.message);
+        console.error('⚠️ Service initialization error:', error instanceof Error ? error.message : String(error));
       }
     })();
 

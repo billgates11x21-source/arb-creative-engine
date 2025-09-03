@@ -107,7 +107,7 @@ export class FlashLoanExamples {
       console.error('Flash loan example execution failed:', error);
       return {
         success: false,
-        error: error.message,
+        error: error instanceof Error ? error.message : 'Unknown error',
         example: await this.generateFlashLoanExample()
       };
     }

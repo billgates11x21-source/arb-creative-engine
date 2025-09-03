@@ -91,7 +91,7 @@ export class DCAAutomationEngine {
   private async checkAndExecuteDCA(): Promise<void> {
     const now = new Date();
     
-    for (const [scheduleId, schedule] of this.activeSchedules) {
+    for (const [scheduleId, schedule] of Array.from(this.activeSchedules.entries())) {
       if (schedule.config.isActive && now >= schedule.nextExecutionTime) {
         await this.executeDCAOrder(schedule);
       }
@@ -184,7 +184,7 @@ export class DCAAutomationEngine {
 
   private async getCurrentPrice(tokenPair: string): Promise<any> {
     try {
-      const ticker = await okxService.exchange.fetchTicker(tokenPair);
+      const ticker = await (okxService as any).exchange.fetchTicker(tokenPair);
       return {
         last: ticker.last?.toString() || '1',
         bid: ticker.bid?.toString() || '1',

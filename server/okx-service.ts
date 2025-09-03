@@ -717,7 +717,7 @@ class OKXService {
             };
           }
         } catch (error) {
-          console.log(`⚠️ Flash loan failed, falling back to regular arbitrage:`, error.message);
+          console.log(`⚠️ Flash loan failed, falling back to regular arbitrage:`, error instanceof Error ? error.message : String(error));
         }
       }
 
@@ -810,7 +810,7 @@ class OKXService {
       // Return structured error for better handling
       return {
         success: false,
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
         actualProfit: 0,
         actualAmount: 0,
         gasUsed: 0,
